@@ -54,8 +54,8 @@ function stripJsonComments(content: string): string {
 
   while (i < content.length) {
     if (inString) {
-      if (content[i] === '\\') {
-        result += content[i] + (content[i + 1] ?? '')
+      if (content[i] === '\\' && i + 1 < content.length) {
+        result += content[i] + content[i + 1]
         i += 2
         continue
       }
@@ -337,9 +337,5 @@ export function getManifestHandler(filename: string): ManifestHandler {
     }
     case 'yaml':
       return new YamlManifestHandler()
-    default:
-      throw new Error(
-        `Unsupported manifest file: "${base}".\nSupported: ${SUPPORTED_MANIFEST_NAMES.join(', ')}`,
-      )
   }
 }

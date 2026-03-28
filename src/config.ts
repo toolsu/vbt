@@ -234,9 +234,7 @@ export function validateConfig(config: ResolvedConfig): void {
   }
 
   // Validate manifest filename is supported
-  if (typeof config.manifest === 'string' && config.manifest) {
-    getManifestHandler(config.manifest)
-  }
+  getManifestHandler(config.manifest)
 
   // Template placeholder checks
   if (typeof config.commitMessage === 'string' && !config.commitMessage.includes('{{version}}')) {

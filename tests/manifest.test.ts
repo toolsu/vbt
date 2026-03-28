@@ -41,6 +41,18 @@ describe('JsonManifestHandler', () => {
       expect(result).toContain('\t"name"')
     })
 
+    it('defaults to 2-space indent for minified JSON', () => {
+      const content = '{"name":"test","version":"1.0.0"}'
+      const result = handler.writeVersion(content, '1.0.0', '2.0.0')
+      expect(result).toContain('  "version": "2.0.0"')
+    })
+
+    it('defaults to 2-space indent when lines have no leading whitespace', () => {
+      const content = '{\n"name": "test",\n"version": "1.0.0"\n}\n'
+      const result = handler.writeVersion(content, '1.0.0', '2.0.0')
+      expect(result).toContain('  "version": "2.0.0"')
+    })
+
     it('preserves trailing newline', () => {
       const content = '{\n  "version": "1.0.0"\n}\n'
       const result = handler.writeVersion(content, '1.0.0', '2.0.0')
@@ -74,6 +86,11 @@ describe('JsoncManifestHandler', () => {
       expect(handler.readVersion(content)).toBe('1.2.3')
     })
 
+    it('reads version from JSONC with escape sequences in strings', () => {
+      const content = '{\n  "desc": "line1\\nline2",\n  "version": "1.2.3"\n}\n'
+      expect(handler.readVersion(content)).toBe('1.2.3')
+    })
+
     it('returns null when no version', () => {
       const content = '{\n  // no version\n  "name": "pkg"\n}\n'
       expect(handler.readVersion(content)).toBeNull()
@@ -97,6 +114,52 @@ describe('JsoncManifestHandler', () => {
       const content = '{\n  "version" /* c */ : "1.0.0",\n  "name": "demo"\n}\n'
       const result = handler.writeVersion(content, '1.0.0', '2.0.0')
       expect(result).toContain('"version" /* c */ : "2.0.0"')
+    })
+
+    it('handles line comment between key and colon', () => {
+      const content = '{\n  "version" // comment\n  : "1.0.0"\n}\n'
+      const result = handler.writeVersion(content, '1.0.0', '2.0.0')
+      expect(result).toContain(': "2.0.0"')
+    })
+
+    it('handles escaped characters in value strings', () => {
+      const content = '{\n  "desc": "line1\\nline2",\n  "version": "1.0.0"\n}\n'
+      const result = handler.writeVersion(content, '1.0.0', '2.0.0')
+      expect(result).toContain('"version": "2.0.0"')
+      expect(result).toContain('"desc": "line1\\nline2"')
+    })
+
+    it('handles escaped characters in key names at depth 1', () => {
+      const content = '{\n  "a\\nb": "x",\n  "version": "1.0.0"\n}\n'
+      const result = handler.writeVersion(content, '1.0.0', '2.0.0')
+      expect(result).toContain('"version": "2.0.0"')
+    })
+
+    it('handles escaped characters in nested value strings', () => {
+      // Content has literal \n escape sequence inside a JSON string value
+      const content = '{\n  "a": { "b": "line1\\nline2" },\n  "version": "1.0.0"\n}\n'
+      const result = handler.writeVersion(content, '1.0.0', '2.0.0')
+      expect(result).toContain('"version": "2.0.0"')
+      expect(result).toContain('"b": "line1\\nline2"')
+    })
+
+    it('handles version value with escape sequence', () => {
+      // Content has literal \n inside the version value; parser reads the char after backslash
+      const content = '{\n  "version": "1.0.0\\n"\n}\n'
+      const result = handler.writeVersion(content, '1.0.0n', '2.0.0')
+      expect(result).toContain('"version": "2.0.0"')
+    })
+
+    it('returns content unchanged when version value is not a string', () => {
+      const content = '{\n  "version": 123\n}\n'
+      const result = handler.writeVersion(content, '1.0.0', '2.0.0')
+      expect(result).toBe(content)
+    })
+
+    it('returns content unchanged when version does not match', () => {
+      const content = '{\n  "version": "3.0.0"\n}\n'
+      const result = handler.writeVersion(content, '1.0.0', '2.0.0')
+      expect(result).toBe(content)
     })
 
     it('replaces only top-level version, not nested', () => {
@@ -229,6 +292,11 @@ describe('YamlManifestHandler', () => {
       expect(handler.readVersion(content)).toBeNull()
     })
 
+    it('ignores tab-indented version', () => {
+      const content = 'dependencies:\n\tversion: 1.2.3\n'
+      expect(handler.readVersion(content)).toBeNull()
+    })
+
     it('returns null when no version', () => {
       const content = 'name: my_app\n'
       expect(handler.readVersion(content)).toBeNull()
@@ -253,6 +321,12 @@ describe('YamlManifestHandler', () => {
       const result = handler.writeVersion(content, '1.0.0', '2.0.0')
       expect(result).toContain('version: 2.0.0\n')
       expect(result).toContain('    version: 1.0.0')
+    })
+
+    it('does not touch tab-indented nested version', () => {
+      const content = 'dependencies:\n\tversion: 1.0.0\nversion: 1.0.0\n'
+      const result = handler.writeVersion(content, '1.0.0', '2.0.0')
+      expect(result).toBe('dependencies:\n\tversion: 1.0.0\nversion: 2.0.0\n')
     })
   })
 })

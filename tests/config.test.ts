@@ -385,6 +385,21 @@ describe('loadConfig', () => {
     expect(config).not.toHaveProperty('packageJson')
   })
 
+  it('throws when both manifest and packageJson are set', async () => {
+    mockExistsSync.mockImplementation((p) => {
+      const path = String(p)
+      return path.endsWith('package.json') || path.endsWith('vbt.config.json')
+    })
+    mockReadFileSync.mockImplementation((p) => {
+      const path = String(p)
+      if (path.endsWith('vbt.config.json'))
+        return JSON.stringify({ manifest: './package.json', packageJson: './package.json' })
+      return JSON.stringify({ name: 'test', version: '1.0.0' })
+    })
+
+    await expect(loadConfig()).rejects.toThrow('cannot set both')
+  })
+
   it('loads config without package.json (non-Node project)', async () => {
     mockExistsSync.mockImplementation((p) => {
       const path = String(p)
