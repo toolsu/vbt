@@ -30,10 +30,10 @@ export interface Config {
   preBumpCheck?: string | false
 
   /**
-   * Path to package.json to update, or false to skip.
+   * Path to package.json to update (relative to project root).
    * @default "./package.json"
    */
-  packageJson?: string | false
+  packageJson?: string
 
   /**
    * File paths to scan for marker-based version replacement.
@@ -114,15 +114,4 @@ export const DEFAULT_CONFIG: Required<Config> = {
   postBumpHook: false,
   verbose: false,
   dryRun: false,
-}
-
-/**
- * CLI options
- */
-export interface CliOptions {
-  config?: string
-  dryRun?: boolean
-  verbose?: boolean
-  help?: boolean
-  version?: boolean
 }

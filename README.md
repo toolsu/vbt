@@ -2,12 +2,16 @@
 
 A CLI tool to bump versions in `package.json` and any marked files, create git tags, and commit changes.
 
+[![npm package](https://img.shields.io/badge/npm%20i%20--g-vbt-blue)](https://www.npmjs.com/package/vbt) [![version number](https://img.shields.io/badge/version-v0.1.0-orange)](https://www.npmjs.com/package/vbt?activeTab=versions) [![Actions Status](https://github.com/toolsu/vbt/workflows/Test/badge.svg)](https://github.com/toolsu/vbt/actions) [![License](https://img.shields.io/badge/license-MIT-brightgreen)](https://github.com/toolsu/vbt/blob/main/LICENSE)<!-- vbt-version -->
+
 ## Install
 
+Prerequisites: Node.js, git
+
 ```bash
-npm install -g vbt
+npm i -g vbt
 # or
-npm install --save-dev vbt
+npm i --D vbt
 ```
 
 ## Usage
@@ -17,6 +21,7 @@ vbt patch                 # 1.2.3 -> 1.2.4
 vbt minor                 # 1.2.3 -> 1.3.0
 vbt major                 # 1.2.3 -> 2.0.0
 vbt 1.2.3                 # Set exact version
+vbt v1.2.3                # Leading "v" is stripped automatically
 vbt prerelease alpha      # 1.2.3 -> 1.2.4-alpha.0
 vbt prerelease            # 1.2.4-alpha.0 -> 1.2.4-alpha.1
 vbt prepatch rc           # 1.2.3 -> 1.2.4-rc.0
@@ -31,18 +36,23 @@ vbt patch --config x.json # Use custom config file
 
 ## File Version Replacement
 
-Mark lines in any file with `vbt-version` to have their version updated automatically:
+Mark lines in any file with `vbt-version` (or a custom marker via the `marker` config option) to have their version updated automatically:
 
+JavaScript / TypeScript:
 ```js
-const VERSION = "1.2.3"; // vbt-version
+const VERSION = "0.1.0"; // vbt-version
 ```
 
-```toml
-version = "1.2.3" # vbt-version
-```
+Markdown / HTML:
 
 ```markdown
-Current version: 1.2.3 <!-- vbt-version -->
+Current version: 0.1.0 <!-- vbt-version -->
+```
+
+TOML:
+
+```toml
+version = "0.1.0" # vbt-version
 ```
 
 Only the **old version** (read from `package.json`) on marked lines is replaced. Unmarked lines and other version-like strings are never touched.
@@ -51,12 +61,12 @@ Only the **old version** (read from `package.json`) on marked lines is replaced.
 
 Use `+N` to replace the version N lines below the marker. This is useful for code blocks in markdown, where inline comments would be visible:
 
-```markdown
+````markdown
 <!-- vbt-version +2 -->
-` `` bash
-npm install my-pkg@1.2.3
-` ``
+```bash
+npm i -g vbt@0.1.0
 ```
+````
 
 The HTML comment is invisible in rendered markdown, and the version inside the code block gets updated.
 
@@ -81,6 +91,10 @@ Create `vbt.config.json` in your project root, or add a `"vbt"` key to `package.
 }
 ```
 
+### Path resolution
+
+All file paths (`packageJson`, `files`, `commitFiles`, config file paths) are resolved relative to the **project root** (the nearest ancestor directory containing `package.json`). This means vbt works correctly when invoked from a subdirectory.
+
 ### Execution order
 
 1. Check clean working directory (`requireCleanWorkingDirectory`)
@@ -93,7 +107,9 @@ Create `vbt.config.json` in your project root, or add a `"vbt"` key to `package.
 8. Git push (`push`)
 9. Run post-bump hook (`postBumpHook`)
 
-Each step can be independently disabled.
+Each step can be independently disabled. Note: disabling commit (`commitMessage: false`) automatically disables tag and push, since a tag without a commit would point to the wrong (pre-bump) commit.
+
+The flow is not fully transactional: if a step fails before commit, vbt attempts to roll back file changes; if `push` or `postBumpHook` fails later, the local commit/tag may already exist. Use `--dry-run` to preview first, and check `git status` / `git diff` to recover.
 
 ### Options
 
@@ -101,7 +117,7 @@ Each step can be independently disabled.
 |--------|------|---------|-------------|
 | `requireCleanWorkingDirectory` | `boolean` | `true` | Require clean git working directory |
 | `preBumpCheck` | `string \| false` | `false` | Command to run before bumping |
-| `packageJson` | `string \| false` | `"./package.json"` | Path to package.json, or `false` to skip update |
+| `packageJson` | `string` | `"./package.json"` | Path to package.json (relative to project root) |
 | `files` | `string[]` | `[]` | Files to scan for marker-based version replacement |
 | `marker` | `string` | `"vbt-version"` | Marker string to identify lines for replacement |
 | `commitMessage` | `string \| false` | `"chore: bump version to v{{version}}"` | Commit message template, or `false` to skip commit |
@@ -113,7 +129,9 @@ Each step can be independently disabled.
 | `verbose` | `boolean` | `false` | Show verbose output |
 | `dryRun` | `boolean` | `false` | Dry run without making changes |
 
-Use `{{version}}` in `commitMessage`, `tag`, and `tagMessage` templates.
+Use `{{version}}` in `commitMessage`, `tag`, and `tagMessage` templates. `{{oldVersion}}` is also available for the previous version.
+
+Unknown configuration keys and invalid types are rejected with an error.
 
 ### CLI flags
 
@@ -124,9 +142,11 @@ Use `{{version}}` in `commitMessage`, `tag`, and `tagMessage` templates.
 | `--no-tag` | Commit but skip tag and push |
 | `--no-push` | Commit and tag but skip push |
 | `--verbose` | Show detailed output |
-| `--config <path>` | Use a custom config file |
+| `--config <path>` | Use a custom config file (also `--config=<path>`) |
 | `--help` | Show help message |
 | `--version` | Show version number |
+
+Unknown flags and unexpected arguments are rejected with an error.
 
 ## License
 

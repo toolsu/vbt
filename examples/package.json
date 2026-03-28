@@ -18,7 +18,6 @@
   "vbt": {
     "commitMessage": "chore: bump version to v{{version}}",
     "push": false,
-    "runPreBumpChecks": true,
-    "preBumpCheckCommand": "npm test"
+    "preBumpCheck": "npm test"
   }
 }

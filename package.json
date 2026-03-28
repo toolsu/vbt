@@ -13,13 +13,13 @@
     "versioning",
     "package-json"
   ],
-  "homepage": "https://github.com/tomchen/vbt#readme",
+  "homepage": "https://github.com/toolsu/vbt#readme",
   "bugs": {
-    "url": "https://github.com/tomchen/vbt/issues"
+    "url": "https://github.com/toolsu/vbt/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tomchen/vbt.git"
+    "url": "git+https://github.com/toolsu/vbt.git"
   },
   "license": "MIT",
   "author": "Tom Chen <tomchen.org@gmail.com>",
@@ -42,7 +42,7 @@
   ],
   "scripts": {
     "build": "tsc",
-    "check": "npm run lint && npm run typecheck",
+    "check": "npm run lint:check && npm run format:check && npm run typecheck",
     "clean": "node -e \"require('fs').rmSync('dist', {recursive: true, force: true})\"",
     "format": "biome format --write .",
     "format:check": "biome format .",
@@ -64,6 +64,6 @@
     "vitest": "^4.1.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   }
 }

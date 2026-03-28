@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { inc, valid } from 'semver-ts'
-import { loadConfig, validateConfig } from './config.js'
+import { findProjectRoot, loadConfig, validateConfig } from './config.js'
 import { RELEASE_TYPES, type ReleaseType } from './types.js'
 
 const require = createRequire(import.meta.url)
@@ -24,7 +24,7 @@ USAGE:
   vbt <version|release> [identifier] [options]
 
 ARGUMENTS:
-  version       Exact version number (e.g., 1.2.3)
+  version       Exact version number (e.g., 1.2.3 or v1.2.3)
   release       Release type: major, minor, patch, premajor, preminor, prepatch, prerelease
   identifier    Pre-release identifier (e.g., alpha, beta, rc) - used with prerelease types
 
@@ -52,6 +52,7 @@ CONFIGURATION:
   - vbt.config.js (.mjs, .cjs)
   - Or add "vbt" key to package.json
 
+  Use {{version}} in templates. Use {{oldVersion}} for the previous version.
   See documentation for all available options.
 `
 }
@@ -101,13 +102,24 @@ export function parseArgs(args: string[]): {
       result.noTag = true
     } else if (arg === '--no-push') {
       result.noPush = true
+    } else if (arg.startsWith('--config=')) {
+      result.config = arg.slice('--config='.length)
     } else if (arg === '--config') {
+      if (i + 1 >= args.length) {
+        throw new Error(
+          '--config requires a path argument.\nUsage: --config <path> or --config=<path>',
+        )
+      }
       result.config = args[++i]
-    } else if (!arg.startsWith('-')) {
+    } else if (arg.startsWith('-')) {
+      throw new Error(`Unknown option: ${arg}\nRun "vbt --help" for usage information.`)
+    } else {
       if (!result.versionOrRelease) {
         result.versionOrRelease = arg
       } else if (!result.identifier) {
         result.identifier = arg
+      } else {
+        throw new Error(`Unexpected argument: "${arg}"\nRun "vbt --help" for usage information.`)
       }
     }
   }
@@ -123,10 +135,15 @@ export function isValidReleaseType(release: string): release is ReleaseType {
 }
 
 /**
- * Replace template placeholders with actual values
+ * Replace template placeholders with actual values.
+ * Supports {{version}} and {{oldVersion}} placeholders.
  */
-export function replaceTemplate(template: string, version: string): string {
-  return template.replace(/\{\{version\}\}/g, version)
+export function replaceTemplate(template: string, version: string, oldVersion?: string): string {
+  let result = template.replace(/\{\{version\}\}/g, version)
+  if (oldVersion !== undefined) {
+    result = result.replace(/\{\{oldVersion\}\}/g, oldVersion)
+  }
+  return result
 }
 
 /**
@@ -144,21 +161,31 @@ export function detectIndent(content: string): string | number {
 }
 
 /**
- * Replace version strings on lines containing the marker in specified files.
- * Returns the list of files that were actually modified.
+ * A pending file update: new content computed in memory, not yet written.
  */
-export function replaceVersionInFiles(
+interface FileUpdate {
+  filePath: string
+  absolutePath: string
+  content: string
+  originalContent: string
+}
+
+/**
+ * Compute version replacements for marked files without writing anything.
+ * Returns the list of updates to apply and the relative paths of modified files.
+ */
+export function computeFileUpdates(
   files: string[],
   marker: string,
   oldVersion: string,
   newVersion: string,
-  dryRun: boolean,
-  verbose: boolean,
-): string[] {
+  baseDir: string,
+): { updates: FileUpdate[]; modifiedFiles: string[] } {
+  const updates: FileUpdate[] = []
   const modifiedFiles: string[] = []
 
   for (const filePath of files) {
-    const absolutePath = resolve(process.cwd(), filePath)
+    const absolutePath = resolve(baseDir, filePath)
     if (!existsSync(absolutePath)) {
       console.warn(`Warning: File not found: ${filePath}`)
       continue
@@ -186,19 +213,30 @@ export function replaceVersionInFiles(
     }
 
     if (modified) {
-      if (!dryRun) {
-        writeFileSync(absolutePath, lines.join('\n'), 'utf8')
-        console.log(`✓ Updated version in ${filePath}`)
-      } else {
-        console.log(`[DRY RUN] Would update version in ${filePath}`)
-      }
+      updates.push({ filePath, absolutePath, content: lines.join('\n'), originalContent: content })
       modifiedFiles.push(filePath)
-    } else if (verbose) {
-      console.log(`No marker matches in ${filePath}`)
     }
   }
 
-  return modifiedFiles
+  return { updates, modifiedFiles }
+}
+
+/**
+ * Write pre-computed file updates to disk.
+ */
+export function applyFileUpdates(updates: FileUpdate[], dryRun: boolean, verbose: boolean): void {
+  for (const { filePath, absolutePath, content } of updates) {
+    if (!dryRun) {
+      writeFileSync(absolutePath, content, 'utf8')
+      console.log(`✓ Updated version in ${filePath}`)
+    } else {
+      console.log(`[DRY RUN] Would update version in ${filePath}`)
+    }
+  }
+
+  if (verbose && updates.length === 0) {
+    console.log('No marker matches in any files')
+  }
 }
 
 /**
@@ -209,6 +247,7 @@ export function execGit(
   description: string,
   dryRun: boolean,
   verbose: boolean,
+  cwd?: string,
 ): void {
   if (verbose || dryRun) {
     console.log(`[${dryRun ? 'DRY RUN' : 'EXEC'}] ${description}`)
@@ -217,7 +256,7 @@ export function execGit(
 
   if (!dryRun) {
     try {
-      execFileSync('git', gitArgs, { stdio: verbose ? 'inherit' : 'pipe' })
+      execFileSync('git', gitArgs, { stdio: verbose ? 'inherit' : 'pipe', cwd })
     } catch (error) {
       throw new Error(`Failed to execute: git ${gitArgs.join(' ')}\n${error}`)
     }
@@ -232,6 +271,7 @@ export function execShell(
   description: string,
   dryRun: boolean,
   verbose: boolean,
+  cwd?: string,
 ): void {
   if (verbose || dryRun) {
     console.log(`[${dryRun ? 'DRY RUN' : 'EXEC'}] ${description}`)
@@ -240,7 +280,7 @@ export function execShell(
 
   if (!dryRun) {
     try {
-      execSync(command, { stdio: verbose ? 'inherit' : 'pipe' })
+      execSync(command, { stdio: verbose ? 'inherit' : 'pipe', cwd })
     } catch (error) {
       throw new Error(`Failed to execute: ${command}\n${error}`)
     }
@@ -269,16 +309,23 @@ export async function run(args: string[]): Promise<void> {
     )
   }
 
+  // Find project root (where package.json lives)
+  const projectRoot = findProjectRoot()
+
   // Load configuration
-  const config = await loadConfig(cliArgs.config, {
-    dryRun: cliArgs.dryRun || undefined,
-    verbose: cliArgs.verbose || undefined,
-    ...(cliArgs.noCommit
-      ? { commitMessage: false as const, tag: false as const, push: false }
-      : {}),
-    ...(cliArgs.noTag ? { tag: false as const, push: false } : {}),
-    ...(cliArgs.noPush ? { push: false } : {}),
-  })
+  const config = await loadConfig(
+    cliArgs.config,
+    {
+      ...(cliArgs.dryRun ? { dryRun: true } : {}),
+      ...(cliArgs.verbose ? { verbose: true } : {}),
+      ...(cliArgs.noCommit
+        ? { commitMessage: false as const, tag: false as const, push: false }
+        : {}),
+      ...(cliArgs.noTag ? { tag: false as const, push: false } : {}),
+      ...(cliArgs.noPush ? { push: false } : {}),
+    },
+    projectRoot,
+  )
 
   validateConfig(config)
 
@@ -288,33 +335,34 @@ export async function run(args: string[]): Promise<void> {
     console.log('Configuration:', JSON.stringify(config, null, 2))
   }
 
+  // ── Preflight: all checks before any file writes ──
+
   // Check if working directory is clean
-  if (config.requireCleanWorkingDirectory && !dryRun) {
-    const gitStatus = execFileSync('git', ['status', '--porcelain']).toString()
+  if (config.requireCleanWorkingDirectory) {
+    const gitStatus = execFileSync('git', ['status', '--porcelain'], {
+      cwd: projectRoot,
+    }).toString()
     if (gitStatus) {
-      throw new Error(
-        'Working directory is not clean. Please commit or stash changes first.\n' +
-          'Use --dry-run to preview changes or set requireCleanWorkingDirectory to false in config.',
-      )
+      if (dryRun) {
+        console.warn('Warning: Working directory is not clean.')
+      } else {
+        throw new Error(
+          'Working directory is not clean. Please commit or stash changes first.\n' +
+            'Use --dry-run to preview changes or set requireCleanWorkingDirectory to false in config.',
+        )
+      }
     }
   }
 
   // Run pre-bump check
   if (config.preBumpCheck) {
     console.log('Running pre-bump checks...')
-    execShell(config.preBumpCheck, 'Pre-bump check', dryRun, verbose)
+    execShell(config.preBumpCheck, 'Pre-bump check', dryRun, verbose, projectRoot)
     console.log('Pre-bump checks passed.')
   }
 
-  // Resolve package.json path and read current version
-  if (!config.packageJson) {
-    throw new Error(
-      'packageJson is set to false but no other version source is available.\n' +
-        'Set packageJson to a valid path to read the current version.',
-    )
-  }
-
-  const packageJsonPath = resolve(process.cwd(), config.packageJson)
+  // Read current version from package.json
+  const packageJsonPath = resolve(projectRoot, config.packageJson)
   if (!existsSync(packageJsonPath)) {
     throw new Error(`package.json not found at ${packageJsonPath}`)
   }
@@ -329,8 +377,13 @@ export async function run(args: string[]): Promise<void> {
 
   // Calculate new version
   let newVersion: string
-  const versionOrRelease = cliArgs.versionOrRelease
+  let versionOrRelease = cliArgs.versionOrRelease
   const identifier = cliArgs.identifier
+
+  // Strip leading 'v' prefix (users commonly type v1.2.3)
+  if (versionOrRelease.startsWith('v') && valid(versionOrRelease.slice(1))) {
+    versionOrRelease = versionOrRelease.slice(1)
+  }
 
   if (valid(versionOrRelease)) {
     newVersion = versionOrRelease
@@ -351,92 +404,146 @@ export async function run(args: string[]): Promise<void> {
     newVersion = calculatedVersion
   }
 
-  console.log(`Version bump: v${oldVersion} -> v${newVersion}`)
+  // Check tag doesn't already exist (before writing anything)
+  if (config.tag && !dryRun) {
+    const tagName = replaceTemplate(config.tag as string, newVersion, oldVersion)
+    try {
+      execFileSync('git', ['rev-parse', tagName], { stdio: 'pipe', cwd: projectRoot })
+      throw new Error(
+        `Tag "${tagName}" already exists. Delete it first or use a different version.`,
+      )
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Tag "')) {
+        throw error
+      }
+      // Tag doesn't exist, which is what we want
+    }
+  }
 
-  // Update package.json
+  // Pre-compute all file changes in memory
   const hasFinalNewline = packageJsonContent.endsWith('\n')
   const indent = detectIndent(packageJsonContent)
   packageJsonData.version = newVersion
 
-  let updatedContent = JSON.stringify(packageJsonData, null, indent)
+  let updatedPackageJson = JSON.stringify(packageJsonData, null, indent)
   if (hasFinalNewline) {
-    updatedContent += '\n'
+    updatedPackageJson += '\n'
   }
 
-  if (!dryRun) {
-    writeFileSync(packageJsonPath, updatedContent, 'utf8')
-    console.log(`✓ Updated version in ${config.packageJson}`)
-  } else {
-    console.log(`[DRY RUN] Would update version in ${config.packageJson}`)
-  }
-
-  // Replace version in marked files
-  const modifiedFiles = replaceVersionInFiles(
+  const { updates: fileUpdates, modifiedFiles } = computeFileUpdates(
     config.files,
     config.marker,
     oldVersion,
     newVersion,
-    dryRun,
-    verbose,
+    projectRoot,
   )
 
-  // Git operations
-  if (config.commitMessage) {
-    const commitMessage = replaceTemplate(config.commitMessage as string, newVersion)
+  console.log(`Version bump: v${oldVersion} -> v${newVersion}`)
 
-    // Stage files
-    const filesToCommit = [
-      config.packageJson,
-      ...modifiedFiles,
-      ...config.commitFiles,
-    ]
+  // ── Phase 1: Write files + git commit (rollback on failure) ──
 
-    for (const file of filesToCommit) {
-      execGit(['add', file], `Stage ${file}`, dryRun, verbose)
-    }
+  let createdTagName = ''
 
+  try {
+    // Write package.json
     if (!dryRun) {
-      console.log(`✓ Staged files: ${filesToCommit.join(', ')}`)
+      writeFileSync(packageJsonPath, updatedPackageJson, 'utf8')
+      console.log(`✓ Updated version in ${config.packageJson}`)
+    } else {
+      console.log(`[DRY RUN] Would update version in ${config.packageJson}`)
     }
 
-    // Commit
-    execGit(['commit', '-m', commitMessage], 'Create commit', dryRun, verbose)
+    // Write marked files
+    applyFileUpdates(fileUpdates, dryRun, verbose)
 
-    if (!dryRun) {
-      console.log(`✓ Created commit: "${commitMessage}"`)
+    // Git commit
+    if (config.commitMessage) {
+      const commitMessage = replaceTemplate(config.commitMessage as string, newVersion, oldVersion)
+      const filesToCommit = [config.packageJson, ...modifiedFiles, ...config.commitFiles]
+
+      for (const file of filesToCommit) {
+        execGit(['add', file], `Stage ${file}`, dryRun, verbose, projectRoot)
+      }
+
+      if (!dryRun) {
+        console.log(`✓ Staged files: ${filesToCommit.join(', ')}`)
+      }
+
+      execGit(['commit', '-m', commitMessage], 'Create commit', dryRun, verbose, projectRoot)
+
+      if (!dryRun) {
+        console.log(`✓ Created commit: "${commitMessage}"`)
+      }
     }
+  } catch (error) {
+    // Rollback: restore original file contents.
+    // This catch is only reachable when !dryRun (dry-run never calls writeFileSync/execFileSync).
+    try {
+      writeFileSync(packageJsonPath, packageJsonContent, 'utf8')
+    } catch {
+      // Best-effort rollback; if this fails too, the original error is more important
+    }
+    for (const { absolutePath, originalContent } of fileUpdates) {
+      try {
+        writeFileSync(absolutePath, originalContent, 'utf8')
+      } catch {
+        // Best-effort rollback
+      }
+    }
+    console.error('Rolled back file changes due to error.')
+    throw error
   }
 
+  // ── Phase 2: Git tag (delete on later failure) ──
+
   if (config.tag) {
-    const tagName = replaceTemplate(config.tag as string, newVersion)
+    const tagName = replaceTemplate(config.tag as string, newVersion, oldVersion)
 
     if (config.tagMessage) {
-      const tagMsg = replaceTemplate(config.tagMessage as string, newVersion)
-      execGit(['tag', '-a', tagName, '-m', tagMsg], 'Create annotated tag', dryRun, verbose)
+      const tagMsg = replaceTemplate(config.tagMessage as string, newVersion, oldVersion)
+      execGit(
+        ['tag', '-a', tagName, '-m', tagMsg],
+        'Create annotated tag',
+        dryRun,
+        verbose,
+        projectRoot,
+      )
     } else {
-      execGit(['tag', tagName], 'Create lightweight tag', dryRun, verbose)
+      execGit(['tag', tagName], 'Create lightweight tag', dryRun, verbose, projectRoot)
     }
 
     if (!dryRun) {
+      createdTagName = tagName
       console.log(`✓ Created tag: ${tagName}`)
     }
   }
 
-  if (config.push) {
-    execGit(['push', 'origin', '--follow-tags'], 'Push to remote', dryRun, verbose)
+  // ── Phase 3: Push + hooks (recovery hints on failure) ──
 
-    if (!dryRun) {
-      console.log('✓ Pushed to origin')
+  try {
+    if (config.push) {
+      execGit(['push', 'origin', '--follow-tags'], 'Push to remote', dryRun, verbose, projectRoot)
+
+      if (!dryRun) {
+        console.log('✓ Pushed to origin')
+      }
     }
-  }
 
-  // Run post-bump hook
-  if (config.postBumpHook) {
-    execShell(config.postBumpHook, 'Post-bump hook', dryRun, verbose)
+    if (config.postBumpHook) {
+      execShell(config.postBumpHook, 'Post-bump hook', dryRun, verbose, projectRoot)
 
-    if (!dryRun) {
-      console.log('✓ Ran post-bump hook')
+      if (!dryRun) {
+        console.log('✓ Ran post-bump hook')
+      }
     }
+  } catch (error) {
+    // This catch is only reachable when !dryRun.
+    console.error('The commit and tag were created locally but a later step failed.')
+    if (createdTagName) {
+      console.error(`To retry push: git push origin --follow-tags`)
+      console.error(`To undo tag: git tag -d ${createdTagName}`)
+    }
+    throw error
   }
 
   console.log(`\n✨ Successfully bumped version from v${oldVersion} to v${newVersion}`)

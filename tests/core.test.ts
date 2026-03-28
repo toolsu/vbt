@@ -13,14 +13,17 @@ vi.mock('node:fs', () => ({
 }))
 
 vi.mock('../src/config.js', () => ({
+  findProjectRoot: vi.fn(),
   loadConfig: vi.fn(),
   validateConfig: vi.fn(),
 }))
 
 import { execFileSync, execSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { loadConfig, validateConfig } from '../src/config.js'
+import { findProjectRoot, loadConfig, validateConfig } from '../src/config.js'
 import {
+  applyFileUpdates,
+  computeFileUpdates,
   detectIndent,
   execGit,
   execShell,
@@ -28,7 +31,6 @@ import {
   isValidReleaseType,
   parseArgs,
   replaceTemplate,
-  replaceVersionInFiles,
   run,
   VERSION,
 } from '../src/core.js'
@@ -38,6 +40,7 @@ const mockExecSync = vi.mocked(execSync)
 const mockExistsSync = vi.mocked(existsSync)
 const mockReadFileSync = vi.mocked(readFileSync)
 const mockWriteFileSync = vi.mocked(writeFileSync)
+const mockFindProjectRoot = vi.mocked(findProjectRoot)
 const mockLoadConfig = vi.mocked(loadConfig)
 const mockValidateConfig = vi.mocked(validateConfig)
 
@@ -49,14 +52,26 @@ function makeConfig(overrides: Partial<Config> = {}): Required<Config> {
   } as Required<Config>
 }
 
+/**
+ * Default mock for execFileSync that simulates "tag does not exist" for rev-parse.
+ * Without this, the tag existence check would think every tag already exists.
+ */
+function defaultExecFileSyncMock(_file: unknown, args: unknown) {
+  if (args && (args as string[])[0] === 'rev-parse') {
+    throw new Error('fatal: not a valid object name')
+  }
+  return Buffer.from('')
+}
+
 function setupMocks(config?: Partial<Config>, packageJson?: Record<string, unknown>) {
   const pkg = packageJson ?? { name: 'test', version: '1.0.0' }
   const content = `${JSON.stringify(pkg, null, 2)}\n`
 
+  mockFindProjectRoot.mockReturnValue('/fake/project')
   mockLoadConfig.mockResolvedValue(makeConfig(config))
   mockExistsSync.mockReturnValue(true)
   mockReadFileSync.mockReturnValue(content)
-  mockExecFileSync.mockReturnValue(Buffer.from(''))
+  mockExecFileSync.mockImplementation(defaultExecFileSyncMock)
   mockExecSync.mockReturnValue(Buffer.from(''))
 }
 
@@ -97,6 +112,10 @@ describe('helpText', () => {
 
   it('includes config section', () => {
     expect(helpText()).toContain('CONFIGURATION:')
+  })
+
+  it('mentions {{oldVersion}}', () => {
+    expect(helpText()).toContain('{{oldVersion}}')
   })
 })
 
@@ -157,6 +176,14 @@ describe('parseArgs', () => {
     expect(parseArgs(['--config', './my-config.json']).config).toBe('./my-config.json')
   })
 
+  it('parses --config=path syntax', () => {
+    expect(parseArgs(['--config=./my-config.json']).config).toBe('./my-config.json')
+  })
+
+  it('throws when --config has no value', () => {
+    expect(() => parseArgs(['--config'])).toThrow('--config requires a path argument')
+  })
+
   it('parses version or release type', () => {
     expect(parseArgs(['patch']).versionOrRelease).toBe('patch')
   })
@@ -167,15 +194,18 @@ describe('parseArgs', () => {
     expect(result.identifier).toBe('alpha')
   })
 
-  it('ignores third positional arg', () => {
-    const result = parseArgs(['prerelease', 'alpha', 'extra'])
-    expect(result.versionOrRelease).toBe('prerelease')
-    expect(result.identifier).toBe('alpha')
+  it('throws on third positional arg', () => {
+    expect(() => parseArgs(['prerelease', 'alpha', 'extra'])).toThrow(
+      'Unexpected argument: "extra"',
+    )
   })
 
-  it('ignores unknown flags', () => {
-    const result = parseArgs(['--unknown', 'patch'])
-    expect(result.versionOrRelease).toBe('patch')
+  it('throws on unknown flags', () => {
+    expect(() => parseArgs(['--unknown'])).toThrow('Unknown option: --unknown')
+  })
+
+  it('throws on unknown short flags', () => {
+    expect(() => parseArgs(['-x'])).toThrow('Unknown option: -x')
   })
 
   it('parses multiple options together', () => {
@@ -221,6 +251,16 @@ describe('replaceTemplate', () => {
   it('handles empty strings', () => {
     expect(replaceTemplate('', '1.0.0')).toBe('')
   })
+
+  it('replaces {{oldVersion}} placeholder', () => {
+    expect(replaceTemplate('bump from {{oldVersion}} to {{version}}', '2.0.0', '1.0.0')).toBe(
+      'bump from 1.0.0 to 2.0.0',
+    )
+  })
+
+  it('leaves {{oldVersion}} intact when oldVersion not provided', () => {
+    expect(replaceTemplate('v{{oldVersion}}', '1.0.0')).toBe('v{{oldVersion}}')
+  })
 })
 
 describe('detectIndent', () => {
@@ -241,91 +281,57 @@ describe('detectIndent', () => {
   })
 })
 
-describe('replaceVersionInFiles', () => {
-  it('replaces version on marked lines', () => {
+describe('computeFileUpdates', () => {
+  it('computes replacement on marked lines', () => {
     mockExistsSync.mockReturnValue(true)
     mockReadFileSync.mockReturnValue(
       'const VERSION = "1.0.0"; // vbt-version\nconst OTHER = "1.0.0";\n',
     )
 
-    const modified = replaceVersionInFiles(
+    const { updates, modifiedFiles } = computeFileUpdates(
       ['index.js'],
       'vbt-version',
       '1.0.0',
       '2.0.0',
-      false,
-      false,
+      '/fake/project',
     )
 
-    expect(modified).toEqual(['index.js'])
-    expect(mockWriteFileSync).toHaveBeenCalledWith(
-      expect.stringContaining('index.js'),
+    expect(modifiedFiles).toEqual(['index.js'])
+    expect(updates).toHaveLength(1)
+    expect(updates[0].content).toBe(
       'const VERSION = "2.0.0"; // vbt-version\nconst OTHER = "1.0.0";\n',
-      'utf8',
     )
+    expect(mockWriteFileSync).not.toHaveBeenCalled()
   })
 
   it('skips lines without marker', () => {
     mockExistsSync.mockReturnValue(true)
     mockReadFileSync.mockReturnValue('const OTHER = "1.0.0";\n')
 
-    const modified = replaceVersionInFiles(
+    const { modifiedFiles } = computeFileUpdates(
       ['index.js'],
       'vbt-version',
       '1.0.0',
       '2.0.0',
-      false,
-      false,
+      '/fake/project',
     )
 
-    expect(modified).toEqual([])
-    expect(mockWriteFileSync).not.toHaveBeenCalled()
+    expect(modifiedFiles).toEqual([])
   })
 
   it('warns on missing file', () => {
     mockExistsSync.mockReturnValue(false)
 
-    const modified = replaceVersionInFiles(
+    const { modifiedFiles } = computeFileUpdates(
       ['missing.js'],
       'vbt-version',
       '1.0.0',
       '2.0.0',
-      false,
-      false,
+      '/fake/project',
     )
 
-    expect(modified).toEqual([])
-    expect(vi.mocked(console.warn)).toHaveBeenCalledWith(
-      expect.stringContaining('File not found'),
-    )
-  })
-
-  it('does not write in dry run', () => {
-    mockExistsSync.mockReturnValue(true)
-    mockReadFileSync.mockReturnValue('version = "1.0.0" # vbt-version\n')
-
-    const modified = replaceVersionInFiles(
-      ['file.toml'],
-      'vbt-version',
-      '1.0.0',
-      '2.0.0',
-      true,
-      false,
-    )
-
-    expect(modified).toEqual(['file.toml'])
-    expect(mockWriteFileSync).not.toHaveBeenCalled()
-  })
-
-  it('logs verbose when no matches', () => {
-    mockExistsSync.mockReturnValue(true)
-    mockReadFileSync.mockReturnValue('no markers here\n')
-
-    replaceVersionInFiles(['file.txt'], 'vbt-version', '1.0.0', '2.0.0', false, true)
-
-    expect(vi.mocked(console.log)).toHaveBeenCalledWith(
-      expect.stringContaining('No marker matches'),
-    )
+    expect(modifiedFiles).toEqual([])
+    expect(vi.mocked(console.warn)).toHaveBeenCalledWith(expect.stringContaining('File not found'))
   })
 
   it('handles multiple files', () => {
@@ -335,33 +341,30 @@ describe('replaceVersionInFiles', () => {
       return 'no marker\n'
     })
 
-    const modified = replaceVersionInFiles(
+    const { modifiedFiles } = computeFileUpdates(
       ['a.js', 'b.js'],
       'vbt-version',
       '1.0.0',
       '2.0.0',
-      false,
-      false,
+      '/fake/project',
     )
 
-    expect(modified).toEqual(['a.js'])
+    expect(modifiedFiles).toEqual(['a.js'])
   })
 
   it('skips marker line when old version not present', () => {
     mockExistsSync.mockReturnValue(true)
     mockReadFileSync.mockReturnValue('some text // vbt-version\n')
 
-    const modified = replaceVersionInFiles(
+    const { modifiedFiles } = computeFileUpdates(
       ['file.js'],
       'vbt-version',
       '1.0.0',
       '2.0.0',
-      false,
-      false,
+      '/fake/project',
     )
 
-    expect(modified).toEqual([])
-    expect(mockWriteFileSync).not.toHaveBeenCalled()
+    expect(modifiedFiles).toEqual([])
   })
 
   it('replaces version on offset line with +N syntax', () => {
@@ -370,20 +373,17 @@ describe('replaceVersionInFiles', () => {
       '<!-- vbt-version +2 -->\n```bash\nnpm install pkg@1.0.0\n```\n',
     )
 
-    const modified = replaceVersionInFiles(
+    const { updates, modifiedFiles } = computeFileUpdates(
       ['README.md'],
       'vbt-version',
       '1.0.0',
       '2.0.0',
-      false,
-      false,
+      '/fake/project',
     )
 
-    expect(modified).toEqual(['README.md'])
-    expect(mockWriteFileSync).toHaveBeenCalledWith(
-      expect.stringContaining('README.md'),
+    expect(modifiedFiles).toEqual(['README.md'])
+    expect(updates[0].content).toBe(
       '<!-- vbt-version +2 -->\n```bash\nnpm install pkg@2.0.0\n```\n',
-      'utf8',
     )
   })
 
@@ -391,83 +391,104 @@ describe('replaceVersionInFiles', () => {
     mockExistsSync.mockReturnValue(true)
     mockReadFileSync.mockReturnValue('# vbt-version +1\nversion = "1.0.0"\n')
 
-    const modified = replaceVersionInFiles(
+    const { updates } = computeFileUpdates(
       ['file.toml'],
       'vbt-version',
       '1.0.0',
       '2.0.0',
-      false,
-      false,
+      '/fake/project',
     )
 
-    expect(modified).toEqual(['file.toml'])
-    expect(mockWriteFileSync).toHaveBeenCalledWith(
-      expect.stringContaining('file.toml'),
-      '# vbt-version +1\nversion = "2.0.0"\n',
-      'utf8',
-    )
+    expect(updates[0].content).toBe('# vbt-version +1\nversion = "2.0.0"\n')
   })
 
   it('ignores offset beyond file length', () => {
     mockExistsSync.mockReturnValue(true)
     mockReadFileSync.mockReturnValue('<!-- vbt-version +99 -->\n')
 
-    const modified = replaceVersionInFiles(
+    const { modifiedFiles } = computeFileUpdates(
       ['file.md'],
       'vbt-version',
       '1.0.0',
       '2.0.0',
-      false,
-      false,
+      '/fake/project',
     )
 
-    expect(modified).toEqual([])
+    expect(modifiedFiles).toEqual([])
   })
 
   it('does not replace marker line itself when offset is used', () => {
     mockExistsSync.mockReturnValue(true)
-    mockReadFileSync.mockReturnValue(
-      'x = "1.0.0" // vbt-version +1\ny = "1.0.0"\n',
-    )
+    mockReadFileSync.mockReturnValue('x = "1.0.0" // vbt-version +1\ny = "1.0.0"\n')
 
-    const modified = replaceVersionInFiles(
+    const { updates } = computeFileUpdates(
       ['file.js'],
       'vbt-version',
       '1.0.0',
       '2.0.0',
-      false,
-      false,
+      '/fake/project',
     )
 
-    expect(modified).toEqual(['file.js'])
-    expect(mockWriteFileSync).toHaveBeenCalledWith(
-      expect.stringContaining('file.js'),
-      'x = "1.0.0" // vbt-version +1\ny = "2.0.0"\n',
-      'utf8',
-    )
+    expect(updates[0].content).toBe('x = "1.0.0" // vbt-version +1\ny = "2.0.0"\n')
   })
 
   it('uses custom marker', () => {
     mockExistsSync.mockReturnValue(true)
     mockReadFileSync.mockReturnValue('v = "1.0.0" # my-marker\n')
 
-    const modified = replaceVersionInFiles(
+    const { modifiedFiles } = computeFileUpdates(
       ['file.py'],
       'my-marker',
       '1.0.0',
       '2.0.0',
-      false,
-      false,
+      '/fake/project',
     )
 
-    expect(modified).toEqual(['file.py'])
+    expect(modifiedFiles).toEqual(['file.py'])
+  })
+
+  it('resolves paths relative to baseDir', () => {
+    mockExistsSync.mockReturnValue(true)
+    mockReadFileSync.mockReturnValue('v = "1.0.0" // vbt-version\n')
+
+    computeFileUpdates(['src/version.ts'], 'vbt-version', '1.0.0', '2.0.0', '/my/project')
+
+    expect(mockExistsSync).toHaveBeenCalledWith('/my/project/src/version.ts')
+  })
+})
+
+describe('applyFileUpdates', () => {
+  it('writes files when not dry run', () => {
+    const updates = [
+      { filePath: 'a.js', absolutePath: '/p/a.js', content: 'new', originalContent: 'old' },
+    ]
+    applyFileUpdates(updates, false, false)
+    expect(mockWriteFileSync).toHaveBeenCalledWith('/p/a.js', 'new', 'utf8')
+  })
+
+  it('does not write in dry run', () => {
+    const updates = [
+      { filePath: 'a.js', absolutePath: '/p/a.js', content: 'new', originalContent: 'old' },
+    ]
+    applyFileUpdates(updates, true, false)
+    expect(mockWriteFileSync).not.toHaveBeenCalled()
+  })
+
+  it('logs verbose when no updates', () => {
+    applyFileUpdates([], false, true)
+    expect(vi.mocked(console.log)).toHaveBeenCalledWith(
+      expect.stringContaining('No marker matches'),
+    )
   })
 })
 
 describe('execGit', () => {
   it('executes git command when not dry run', () => {
     execGit(['status'], 'test', false, false)
-    expect(mockExecFileSync).toHaveBeenCalledWith('git', ['status'], { stdio: 'pipe' })
+    expect(mockExecFileSync).toHaveBeenCalledWith('git', ['status'], {
+      stdio: 'pipe',
+      cwd: undefined,
+    })
   })
 
   it('does not execute during dry run', () => {
@@ -477,7 +498,10 @@ describe('execGit', () => {
 
   it('uses inherit stdio when verbose', () => {
     execGit(['status'], 'test', false, true)
-    expect(mockExecFileSync).toHaveBeenCalledWith('git', ['status'], { stdio: 'inherit' })
+    expect(mockExecFileSync).toHaveBeenCalledWith('git', ['status'], {
+      stdio: 'inherit',
+      cwd: undefined,
+    })
   })
 
   it('logs during dry run', () => {
@@ -501,12 +525,20 @@ describe('execGit', () => {
       'Failed to execute: git bad-cmd',
     )
   })
+
+  it('passes cwd option', () => {
+    execGit(['status'], 'test', false, false, '/my/project')
+    expect(mockExecFileSync).toHaveBeenCalledWith('git', ['status'], {
+      stdio: 'pipe',
+      cwd: '/my/project',
+    })
+  })
 })
 
 describe('execShell', () => {
   it('executes shell command when not dry run', () => {
     execShell('npm test', 'test', false, false)
-    expect(mockExecSync).toHaveBeenCalledWith('npm test', { stdio: 'pipe' })
+    expect(mockExecSync).toHaveBeenCalledWith('npm test', { stdio: 'pipe', cwd: undefined })
   })
 
   it('does not execute during dry run', () => {
@@ -516,7 +548,7 @@ describe('execShell', () => {
 
   it('uses inherit stdio when verbose', () => {
     execShell('npm test', 'test', false, true)
-    expect(mockExecSync).toHaveBeenCalledWith('npm test', { stdio: 'inherit' })
+    expect(mockExecSync).toHaveBeenCalledWith('npm test', { stdio: 'inherit', cwd: undefined })
   })
 
   it('logs during dry run', () => {
@@ -537,6 +569,14 @@ describe('execShell', () => {
       throw new Error('command failed')
     })
     expect(() => execShell('bad-cmd', 'test', false, false)).toThrow('Failed to execute: bad-cmd')
+  })
+
+  it('passes cwd option', () => {
+    execShell('npm test', 'test', false, false, '/my/project')
+    expect(mockExecSync).toHaveBeenCalledWith('npm test', {
+      stdio: 'pipe',
+      cwd: '/my/project',
+    })
   })
 })
 
@@ -600,6 +640,17 @@ describe('run', () => {
     )
   })
 
+  it('strips v prefix from exact version', async () => {
+    setupMocks()
+    await run(['v3.5.7'])
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      expect.stringContaining('package.json'),
+      expect.stringContaining('"version": "3.5.7"'),
+      'utf8',
+    )
+  })
+
   it('handles prerelease with identifier', async () => {
     setupMocks()
     await run(['prerelease', 'alpha'])
@@ -633,42 +684,54 @@ describe('run', () => {
   })
 
   it('throws when package.json not found', async () => {
+    mockFindProjectRoot.mockReturnValue('/fake/project')
     mockLoadConfig.mockResolvedValue(makeConfig())
     mockExistsSync.mockReturnValue(false)
 
     await expect(run(['patch'])).rejects.toThrow('package.json not found')
   })
 
-  it('throws when packageJson is false', async () => {
-    setupMocks({ packageJson: false })
-    await expect(run(['patch'])).rejects.toThrow('packageJson is set to false')
-  })
-
   it('checks clean working directory', async () => {
+    mockFindProjectRoot.mockReturnValue('/fake/project')
     mockLoadConfig.mockResolvedValue(makeConfig({ requireCleanWorkingDirectory: true }))
     mockExistsSync.mockReturnValue(true)
     mockReadFileSync.mockReturnValue('{"name":"test","version":"1.0.0"}\n')
     mockExecFileSync.mockImplementation((_file, args) => {
       if (args && (args as string[])[0] === 'status') return Buffer.from('M file.ts\n')
+      if (args && (args as string[])[0] === 'rev-parse')
+        throw new Error('fatal: not a valid object name')
       return Buffer.from('')
     })
 
     await expect(run(['patch'])).rejects.toThrow('not clean')
   })
 
+  it('warns on dirty directory during dry run instead of skipping', async () => {
+    mockFindProjectRoot.mockReturnValue('/fake/project')
+    mockLoadConfig.mockResolvedValue(
+      makeConfig({ requireCleanWorkingDirectory: true, dryRun: true }),
+    )
+    mockExistsSync.mockReturnValue(true)
+    mockReadFileSync.mockReturnValue('{"name":"test","version":"1.0.0"}\n')
+    mockExecFileSync.mockImplementation((_file, args) => {
+      if (args && (args as string[])[0] === 'status') return Buffer.from('M file.ts\n')
+      if (args && (args as string[])[0] === 'rev-parse')
+        throw new Error('fatal: not a valid object name')
+      return Buffer.from('')
+    })
+
+    await run(['patch'])
+
+    expect(vi.mocked(console.warn)).toHaveBeenCalledWith('Warning: Working directory is not clean.')
+  })
+
   it('skips clean check when requireCleanWorkingDirectory is false', async () => {
     setupMocks({ requireCleanWorkingDirectory: false })
     await run(['patch'])
 
-    const statusCalls = gitCalls().filter((args) => args[0] === 'status')
-    expect(statusCalls).toHaveLength(0)
-  })
-
-  it('skips clean check during dry run', async () => {
-    setupMocks({ requireCleanWorkingDirectory: true, dryRun: true })
-    await run(['patch'])
-
-    const statusCalls = gitCalls().filter((args) => args[0] === 'status')
+    const statusCalls = mockExecFileSync.mock.calls.filter(
+      (c) => c[0] === 'git' && (c[1] as string[])[0] === 'status',
+    )
     expect(statusCalls).toHaveLength(0)
   })
 
@@ -697,7 +760,7 @@ describe('run', () => {
   })
 
   it('skips commit when commitMessage is false', async () => {
-    setupMocks({ commitMessage: false })
+    setupMocks({ commitMessage: false, tag: false })
     await run(['patch'])
 
     const calls = gitCalls()
@@ -751,32 +814,6 @@ describe('run', () => {
     expect(hasPush).toBe(false)
   })
 
-  it('--no-commit skips commit', async () => {
-    setupMocks({ commitMessage: false })
-    await run(['patch'])
-
-    const calls = gitCalls()
-    expect(calls.some((a) => a[0] === 'commit')).toBe(false)
-    expect(calls.some((a) => a[0] === 'add')).toBe(false)
-  })
-
-  it('--no-tag skips tag', async () => {
-    setupMocks({ tag: false })
-    await run(['patch'])
-
-    const calls = gitCalls()
-    expect(calls.some((a) => a[0] === 'tag')).toBe(false)
-    expect(calls.some((a) => a[0] === 'commit')).toBe(true)
-  })
-
-  it('--no-push overrides push config', async () => {
-    setupMocks({ push: false })
-    await run(['patch'])
-
-    const calls = gitCalls()
-    expect(calls.some((a) => a[0] === 'push')).toBe(false)
-  })
-
   it('--no-commit passes commitMessage:false, tag:false, push:false to loadConfig', async () => {
     setupMocks()
     await run(['patch', '--no-commit'])
@@ -784,6 +821,7 @@ describe('run', () => {
     expect(mockLoadConfig).toHaveBeenCalledWith(
       undefined,
       expect.objectContaining({ commitMessage: false, tag: false, push: false }),
+      '/fake/project',
     )
   })
 
@@ -794,6 +832,7 @@ describe('run', () => {
     expect(mockLoadConfig).toHaveBeenCalledWith(
       undefined,
       expect.objectContaining({ tag: false, push: false }),
+      '/fake/project',
     )
   })
 
@@ -804,6 +843,7 @@ describe('run', () => {
     expect(mockLoadConfig).toHaveBeenCalledWith(
       undefined,
       expect.objectContaining({ push: false }),
+      '/fake/project',
     )
   })
 
@@ -830,10 +870,11 @@ describe('run', () => {
   })
 
   it('does not add newline when original had none', async () => {
+    mockFindProjectRoot.mockReturnValue('/fake/project')
     mockLoadConfig.mockResolvedValue(makeConfig())
     mockExistsSync.mockReturnValue(true)
     mockReadFileSync.mockReturnValue('{"name":"test","version":"1.0.0"}')
-    mockExecFileSync.mockReturnValue(Buffer.from(''))
+    mockExecFileSync.mockImplementation(defaultExecFileSyncMock)
 
     await run(['patch'])
 
@@ -842,10 +883,11 @@ describe('run', () => {
   })
 
   it('auto-detects indent', async () => {
+    mockFindProjectRoot.mockReturnValue('/fake/project')
     mockLoadConfig.mockResolvedValue(makeConfig())
     mockExistsSync.mockReturnValue(true)
     mockReadFileSync.mockReturnValue('{\n    "name": "test",\n    "version": "1.0.0"\n}\n')
-    mockExecFileSync.mockReturnValue(Buffer.from(''))
+    mockExecFileSync.mockImplementation(defaultExecFileSyncMock)
 
     await run(['patch'])
 
@@ -887,16 +929,15 @@ describe('run', () => {
   })
 
   it('stages marker-replaced files for commit', async () => {
-    mockLoadConfig.mockResolvedValue(
-      makeConfig({ files: ['version.rs'], marker: 'vbt-version' }),
-    )
+    mockFindProjectRoot.mockReturnValue('/fake/project')
+    mockLoadConfig.mockResolvedValue(makeConfig({ files: ['version.rs'], marker: 'vbt-version' }))
     mockExistsSync.mockReturnValue(true)
     mockReadFileSync.mockImplementation((p) => {
       if (String(p).includes('version.rs'))
         return 'pub const VERSION: &str = "1.0.0"; // vbt-version\n'
       return '{\n  "name": "test",\n  "version": "1.0.0"\n}\n'
     })
-    mockExecFileSync.mockReturnValue(Buffer.from(''))
+    mockExecFileSync.mockImplementation(defaultExecFileSyncMock)
 
     await run(['patch'])
 
@@ -910,6 +951,14 @@ describe('run', () => {
 
     const calls = gitCalls()
     expect(calls).toContainEqual(['commit', '-m', 'release: v1.0.1'])
+  })
+
+  it('uses {{oldVersion}} in commit message', async () => {
+    setupMocks({ commitMessage: 'bump from {{oldVersion}} to {{version}}' })
+    await run(['patch'])
+
+    const calls = gitCalls()
+    expect(calls).toContainEqual(['commit', '-m', 'bump from 1.0.0 to 1.0.1'])
   })
 
   it('uses custom tag name template', async () => {
@@ -930,6 +979,21 @@ describe('run', () => {
     )
   })
 
+  it('checks tag existence before creating', async () => {
+    setupMocks()
+    // Simulate tag already existing (rev-parse succeeds)
+    mockExecFileSync.mockImplementation((_file, args) => {
+      if (args && (args as string[])[0] === 'rev-parse' && (args as string[])[1] === 'v1.0.1') {
+        return Buffer.from('abc123\n')
+      }
+      return Buffer.from('')
+    })
+
+    await expect(run(['patch'])).rejects.toThrow('Tag "v1.0.1" already exists')
+    // Verify no files were written (preflight catches it before writes)
+    expect(mockWriteFileSync).not.toHaveBeenCalled()
+  })
+
   it('dry run with push enabled does not log push success', async () => {
     setupMocks({ push: true, dryRun: true })
     await run(['patch'])
@@ -946,14 +1010,24 @@ describe('run', () => {
     expect(logCalls).not.toContainEqual(expect.stringContaining('Ran post-bump hook'))
   })
 
-  it('passes config path and CLI overrides to loadConfig', async () => {
+  it('passes config path, CLI overrides, and projectRoot to loadConfig', async () => {
     setupMocks()
     await run(['patch', '--config', './custom.json', '--dry-run', '--verbose'])
 
-    expect(mockLoadConfig).toHaveBeenCalledWith('./custom.json', {
-      dryRun: true,
-      verbose: true,
-    })
+    expect(mockLoadConfig).toHaveBeenCalledWith(
+      './custom.json',
+      expect.objectContaining({ dryRun: true, verbose: true }),
+      '/fake/project',
+    )
+  })
+
+  it('does not pass dryRun/verbose when flags are not set', async () => {
+    setupMocks()
+    await run(['patch'])
+
+    const overrides = mockLoadConfig.mock.calls[0][1] as Record<string, unknown>
+    expect(overrides).not.toHaveProperty('dryRun')
+    expect(overrides).not.toHaveProperty('verbose')
   })
 
   it('calls validateConfig', async () => {
@@ -964,21 +1038,204 @@ describe('run', () => {
   })
 
   it('handles clean working directory check passing', async () => {
+    mockFindProjectRoot.mockReturnValue('/fake/project')
     mockLoadConfig.mockResolvedValue(makeConfig({ requireCleanWorkingDirectory: true }))
     mockExistsSync.mockReturnValue(true)
     mockReadFileSync.mockReturnValue('{"name":"test","version":"1.0.0"}\n')
-    mockExecFileSync.mockReturnValue(Buffer.from(''))
+    mockExecFileSync.mockImplementation(defaultExecFileSyncMock)
 
     await run(['patch'])
     expect(mockWriteFileSync).toHaveBeenCalled()
   })
 
   it('handles inc returning null', async () => {
+    mockFindProjectRoot.mockReturnValue('/fake/project')
     mockLoadConfig.mockResolvedValue(makeConfig())
     mockExistsSync.mockReturnValue(true)
     mockReadFileSync.mockReturnValue('{"name":"test","version":"invalid"}\n')
-    mockExecFileSync.mockReturnValue(Buffer.from(''))
+    mockExecFileSync.mockImplementation(defaultExecFileSyncMock)
 
     await expect(run(['patch'])).rejects.toThrow('Failed to calculate new version')
+  })
+
+  it('passes projectRoot as cwd to git commands', async () => {
+    setupMocks()
+    await run(['patch'])
+
+    // Check that git add is called with cwd
+    const addCalls = mockExecFileSync.mock.calls.filter(
+      (c) => c[0] === 'git' && (c[1] as string[])[0] === 'add',
+    )
+    for (const call of addCalls) {
+      expect((call[2] as { cwd?: string }).cwd).toBe('/fake/project')
+    }
+  })
+
+  it('passes projectRoot as cwd to shell hooks', async () => {
+    setupMocks({ preBumpCheck: 'npm test' })
+    await run(['patch'])
+
+    expect(mockExecSync).toHaveBeenCalledWith(
+      'npm test',
+      expect.objectContaining({
+        cwd: '/fake/project',
+      }),
+    )
+  })
+
+  it('resolves packageJson relative to projectRoot', async () => {
+    mockFindProjectRoot.mockReturnValue('/my/root')
+    mockLoadConfig.mockResolvedValue(makeConfig({ packageJson: './sub/package.json' }))
+    mockExistsSync.mockReturnValue(true)
+    mockReadFileSync.mockReturnValue('{"name":"test","version":"1.0.0"}\n')
+    mockExecFileSync.mockImplementation(defaultExecFileSyncMock)
+
+    await run(['patch'])
+
+    expect(mockReadFileSync).toHaveBeenCalledWith('/my/root/sub/package.json', 'utf8')
+  })
+
+  it('bumps same version (no-op version)', async () => {
+    setupMocks()
+    await run(['1.0.0'])
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      expect.stringContaining('package.json'),
+      expect.stringContaining('"version": "1.0.0"'),
+      'utf8',
+    )
+  })
+
+  it('handles premajor with identifier', async () => {
+    setupMocks()
+    await run(['premajor', 'beta'])
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      expect.stringContaining('package.json'),
+      expect.stringContaining('"version": "2.0.0-beta.0"'),
+      'utf8',
+    )
+  })
+
+  it('handles preminor with identifier', async () => {
+    setupMocks()
+    await run(['preminor', 'rc'])
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      expect.stringContaining('package.json'),
+      expect.stringContaining('"version": "1.1.0-rc.0"'),
+      'utf8',
+    )
+  })
+
+  it('handles prepatch with identifier', async () => {
+    setupMocks()
+    await run(['prepatch', 'alpha'])
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      expect.stringContaining('package.json'),
+      expect.stringContaining('"version": "1.0.1-alpha.0"'),
+      'utf8',
+    )
+  })
+
+  it('rolls back files when git commit fails', async () => {
+    const originalContent = '{\n  "name": "test",\n  "version": "1.0.0"\n}\n'
+    setupMocks()
+    // Make git commit fail
+    mockExecFileSync.mockImplementation((_file, args) => {
+      if (args && (args as string[])[0] === 'rev-parse')
+        throw new Error('fatal: not a valid object name')
+      if (args && (args as string[])[0] === 'commit') throw new Error('commit failed')
+      return Buffer.from('')
+    })
+    mockReadFileSync.mockReturnValue(originalContent)
+
+    await expect(run(['patch'])).rejects.toThrow('commit failed')
+
+    // Verify rollback: last writeFileSync call should restore original content
+    const writeCalls = mockWriteFileSync.mock.calls
+    const lastWrite = writeCalls[writeCalls.length - 1]
+    expect(lastWrite[1]).toBe(originalContent)
+    expect(vi.mocked(console.error)).toHaveBeenCalledWith('Rolled back file changes due to error.')
+  })
+
+  it('prints recovery hints when push fails', async () => {
+    setupMocks({ push: true })
+    mockExecFileSync.mockImplementation((_file, args) => {
+      if (args && (args as string[])[0] === 'rev-parse')
+        throw new Error('fatal: not a valid object name')
+      if (args && (args as string[])[0] === 'push') throw new Error('push failed')
+      return Buffer.from('')
+    })
+
+    await expect(run(['patch'])).rejects.toThrow('push failed')
+
+    expect(vi.mocked(console.error)).toHaveBeenCalledWith(
+      expect.stringContaining('commit and tag were created locally'),
+    )
+    expect(vi.mocked(console.error)).toHaveBeenCalledWith(
+      expect.stringContaining('git push origin --follow-tags'),
+    )
+  })
+
+  it('rollback is best-effort when restore also fails', async () => {
+    setupMocks({ files: ['src/v.ts'], marker: 'vbt-version' })
+    let writeCount = 0
+    mockReadFileSync.mockImplementation((p) => {
+      if (String(p).includes('v.ts')) return 'x = "1.0.0"; // vbt-version\n'
+      return '{\n  "name": "test",\n  "version": "1.0.0"\n}\n'
+    })
+    mockExecFileSync.mockImplementation((_file, args) => {
+      if (args && (args as string[])[0] === 'rev-parse')
+        throw new Error('fatal: not a valid object name')
+      if (args && (args as string[])[0] === 'commit') throw new Error('commit failed')
+      return Buffer.from('')
+    })
+    // Let initial writes succeed, fail on rollback writes
+    mockWriteFileSync.mockImplementation(() => {
+      writeCount++
+      if (writeCount > 2) throw new Error('disk full')
+    })
+
+    await expect(run(['patch'])).rejects.toThrow('commit failed')
+    expect(vi.mocked(console.error)).toHaveBeenCalledWith('Rolled back file changes due to error.')
+  })
+
+  it('does not rollback files when push fails (commit already done)', async () => {
+    const originalContent = '{\n  "name": "test",\n  "version": "1.0.0"\n}\n'
+    setupMocks({ push: true })
+    mockExecFileSync.mockImplementation((_file, args) => {
+      if (args && (args as string[])[0] === 'rev-parse')
+        throw new Error('fatal: not a valid object name')
+      if (args && (args as string[])[0] === 'push') throw new Error('push failed')
+      return Buffer.from('')
+    })
+    mockReadFileSync.mockReturnValue(originalContent)
+
+    await expect(run(['patch'])).rejects.toThrow('push failed')
+
+    // Should NOT see rollback message
+    expect(vi.mocked(console.error)).not.toHaveBeenCalledWith(
+      'Rolled back file changes due to error.',
+    )
+  })
+
+  it('recovery hints without tag when push fails and tag is disabled', async () => {
+    setupMocks({ push: true, tag: false })
+    mockExecFileSync.mockImplementation((_file, args) => {
+      if (args && (args as string[])[0] === 'rev-parse')
+        throw new Error('fatal: not a valid object name')
+      if (args && (args as string[])[0] === 'push') throw new Error('push failed')
+      return Buffer.from('')
+    })
+
+    await expect(run(['patch'])).rejects.toThrow('push failed')
+
+    expect(vi.mocked(console.error)).toHaveBeenCalledWith(
+      expect.stringContaining('commit and tag were created locally'),
+    )
+    // Should NOT mention tag commands since no tag was created
+    expect(vi.mocked(console.error)).not.toHaveBeenCalledWith(expect.stringContaining('git tag -d'))
   })
 })

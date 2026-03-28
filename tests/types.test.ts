@@ -39,4 +39,8 @@ describe('DEFAULT_CONFIG', () => {
       expect(value, `DEFAULT_CONFIG.${key} should not be undefined`).not.toBeUndefined()
     }
   })
+
+  it('packageJson is a string (not string|false)', () => {
+    expect(typeof DEFAULT_CONFIG.packageJson).toBe('string')
+  })
 })

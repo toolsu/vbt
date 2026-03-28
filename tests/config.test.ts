@@ -11,7 +11,7 @@ vi.mock('node:fs', () => ({
 }))
 
 import { existsSync, readFileSync } from 'node:fs'
-import { imports, loadConfig, validateConfig } from '../src/config.js'
+import { findProjectRoot, imports, loadConfig, validateConfig } from '../src/config.js'
 
 const mockExistsSync = vi.mocked(existsSync)
 const mockReadFileSync = vi.mocked(readFileSync)
@@ -25,9 +25,30 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+describe('findProjectRoot', () => {
+  it('returns directory containing package.json', () => {
+    mockExistsSync.mockImplementation((p) => String(p) === '/fake/project/package.json')
+    expect(findProjectRoot('/fake/project')).toBe('/fake/project')
+  })
+
+  it('walks up to find package.json', () => {
+    mockExistsSync.mockImplementation((p) => String(p) === '/fake/package.json')
+    expect(findProjectRoot('/fake/project/nested')).toBe('/fake')
+  })
+
+  it('returns startPath when no package.json found', () => {
+    mockExistsSync.mockReturnValue(false)
+    expect(findProjectRoot('/fake/project')).toBe('/fake/project')
+  })
+
+  it('uses process.cwd() as default', () => {
+    mockExistsSync.mockImplementation((p) => String(p) === '/fake/project/package.json')
+    expect(findProjectRoot()).toBe('/fake/project')
+  })
+})
+
 describe('imports.dynamicImport', () => {
   it('wraps native import()', async () => {
-    // Just call the real function to cover it — it will fail on a bogus path
     await expect(imports.dynamicImport('nonexistent-module')).rejects.toThrow()
   })
 })
@@ -276,10 +297,41 @@ describe('loadConfig', () => {
     const config = await loadConfig('./custom.txt')
     expect(config).toEqual(DEFAULT_CONFIG)
   })
+
+  it('accepts explicit projectRoot parameter', async () => {
+    mockExistsSync.mockImplementation((p) => {
+      return String(p) === '/custom/root/package.json'
+    })
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({ name: 'test', version: '1.0.0', vbt: { push: true } }),
+    )
+
+    const config = await loadConfig(undefined, undefined, '/custom/root')
+    expect(config.push).toBe(true)
+  })
+
+  it('resolves custom config path relative to projectRoot', async () => {
+    mockExistsSync.mockImplementation((p) => {
+      const path = String(p)
+      return path.endsWith('package.json') || path === '/fake/project/sub/my.json'
+    })
+    mockReadFileSync.mockImplementation((p) => {
+      if (String(p) === '/fake/project/sub/my.json') return JSON.stringify({ push: true })
+      return JSON.stringify({ name: 'test', version: '1.0.0' })
+    })
+
+    const config = await loadConfig('./sub/my.json')
+    expect(config.push).toBe(true)
+  })
 })
 
 describe('validateConfig', () => {
   function makeConfig(overrides: Partial<Config> = {}): Required<Config> {
+    return { ...DEFAULT_CONFIG, ...overrides } as Required<Config>
+  }
+
+  /** Like makeConfig but accepts arbitrary values for testing type validation */
+  function makeInvalidConfig(overrides: Record<string, unknown>): Required<Config> {
     return { ...DEFAULT_CONFIG, ...overrides } as Required<Config>
   }
 
@@ -292,12 +344,87 @@ describe('validateConfig', () => {
 
   it('throws on empty packageJson string', () => {
     const config = makeConfig({ packageJson: '' })
-    expect(() => validateConfig(config)).toThrow('packageJson path cannot be an empty string')
+    expect(() => validateConfig(config)).toThrow('packageJson')
   })
 
-  it('does not throw when packageJson is false', () => {
-    const config = makeConfig({ packageJson: false })
-    expect(() => validateConfig(config)).not.toThrow()
+  it('throws on unknown config keys', () => {
+    const config = { ...DEFAULT_CONFIG, unknownKey: true } as Required<Config>
+    expect(() => validateConfig(config)).toThrow('Unknown configuration option: "unknownKey"')
+  })
+
+  it('throws on multiple unknown keys (reports first)', () => {
+    const config = { ...DEFAULT_CONFIG, foo: 1, bar: 2 } as Required<Config>
+    expect(() => validateConfig(config)).toThrow('Unknown configuration option')
+  })
+
+  it('throws when requireCleanWorkingDirectory is not boolean', () => {
+    const config = makeInvalidConfig({ requireCleanWorkingDirectory: 'yes' })
+    expect(() => validateConfig(config)).toThrow('"requireCleanWorkingDirectory" must be a boolean')
+  })
+
+  it('throws when preBumpCheck is not string or false', () => {
+    const config = makeInvalidConfig({ preBumpCheck: 123 })
+    expect(() => validateConfig(config)).toThrow('"preBumpCheck" must be a string or false')
+  })
+
+  it('throws when packageJson is not string', () => {
+    const config = makeInvalidConfig({ packageJson: false })
+    expect(() => validateConfig(config)).toThrow('"packageJson" must be a string')
+  })
+
+  it('throws when files is not string array', () => {
+    const config = makeInvalidConfig({ files: 'README.md' })
+    expect(() => validateConfig(config)).toThrow('"files" must be an array of strings')
+  })
+
+  it('throws when files contains non-string', () => {
+    const config = makeInvalidConfig({ files: [1, 2] })
+    expect(() => validateConfig(config)).toThrow('"files" must be an array of strings')
+  })
+
+  it('throws when marker is not string', () => {
+    const config = makeInvalidConfig({ marker: true })
+    expect(() => validateConfig(config)).toThrow('"marker" must be a string')
+  })
+
+  it('throws when commitMessage is not string or false', () => {
+    const config = makeInvalidConfig({ commitMessage: 42 })
+    expect(() => validateConfig(config)).toThrow('"commitMessage" must be a string or false')
+  })
+
+  it('throws when commitFiles is not string array', () => {
+    const config = makeInvalidConfig({ commitFiles: 'file.txt' })
+    expect(() => validateConfig(config)).toThrow('"commitFiles" must be an array of strings')
+  })
+
+  it('throws when tag is not string or false', () => {
+    const config = makeInvalidConfig({ tag: 123 })
+    expect(() => validateConfig(config)).toThrow('"tag" must be a string or false')
+  })
+
+  it('throws when tagMessage is not string or false', () => {
+    const config = makeInvalidConfig({ tagMessage: [] })
+    expect(() => validateConfig(config)).toThrow('"tagMessage" must be a string or false')
+  })
+
+  it('throws when push is not boolean', () => {
+    const config = makeInvalidConfig({ push: 'true' })
+    expect(() => validateConfig(config)).toThrow('"push" must be a boolean')
+  })
+
+  it('throws when postBumpHook is not string or false', () => {
+    const config = makeInvalidConfig({ postBumpHook: {} })
+    expect(() => validateConfig(config)).toThrow('"postBumpHook" must be a string or false')
+  })
+
+  it('throws when verbose is not boolean', () => {
+    const config = makeInvalidConfig({ verbose: 'true' })
+    expect(() => validateConfig(config)).toThrow('"verbose" must be a boolean')
+  })
+
+  it('throws when dryRun is not boolean', () => {
+    const config = makeInvalidConfig({ dryRun: 1 })
+    expect(() => validateConfig(config)).toThrow('"dryRun" must be a boolean')
   })
 
   it('warns and resets commitMessage without {{version}}', () => {
@@ -310,7 +437,7 @@ describe('validateConfig', () => {
 
   it('skips commitMessage check when false', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const config = makeConfig({ commitMessage: false })
+    const config = makeConfig({ commitMessage: false, tag: false })
     validateConfig(config)
     expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('commitMessage'))
   })
@@ -325,7 +452,7 @@ describe('validateConfig', () => {
 
   it('skips tag check when false', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const config = makeConfig({ tag: false })
+    const config = makeConfig({ tag: false, commitMessage: false })
     validateConfig(config)
     expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('tag should'))
   })
@@ -340,7 +467,7 @@ describe('validateConfig', () => {
 
   it('skips tagMessage check when tag is false', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const config = makeConfig({ tag: false, tagMessage: 'no placeholder' })
+    const config = makeConfig({ tag: false, tagMessage: 'no placeholder', commitMessage: false })
     validateConfig(config)
     expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('tagMessage'))
   })
@@ -351,16 +478,34 @@ describe('validateConfig', () => {
     validateConfig(config)
     expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('tagMessage'))
   })
+
+  it('disables tag when commitMessage is false', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const config = makeConfig({ commitMessage: false, tag: 'v{{version}}' })
+    validateConfig(config)
+    expect(config.tag).toBe(false)
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('tag is disabled'))
+  })
+
+  it('disables push when commitMessage is false', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const config = makeConfig({ commitMessage: false, push: true })
+    validateConfig(config)
+    expect(config.push).toBe(false)
+  })
+
+  it('does not warn about tag when commitMessage is false and tag is already false', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const config = makeConfig({ commitMessage: false, tag: false })
+    validateConfig(config)
+    expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('tag is disabled'))
+  })
 })
 
 describe('example config files', () => {
   const examplesDir = resolve(__dirname, '..', 'examples')
 
-  for (const file of [
-    'vbt.config.json',
-    'vbt.config.minimal.json',
-    'vbt.config.full.json',
-  ]) {
+  for (const file of ['vbt.config.json', 'vbt.config.minimal.json', 'vbt.config.full.json']) {
     it(`${file} has only valid keys`, () => {
       const content = actualFs.readFileSync(resolve(examplesDir, file), 'utf8')
       const config = JSON.parse(content) as Record<string, unknown>
@@ -377,4 +522,22 @@ describe('example config files', () => {
       warnSpy.mockRestore()
     })
   }
+
+  it('examples/package.json vbt key has only valid keys', () => {
+    const content = actualFs.readFileSync(resolve(examplesDir, 'package.json'), 'utf8')
+    const pkg = JSON.parse(content) as { vbt?: Record<string, unknown> }
+    expect(pkg.vbt).toBeDefined()
+    for (const key of Object.keys(pkg.vbt as Record<string, unknown>)) {
+      expect(VALID_KEYS, `unexpected key "${key}" in examples/package.json`).toContain(key)
+    }
+  })
+
+  it('examples/package.json vbt config passes validation', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const content = actualFs.readFileSync(resolve(examplesDir, 'package.json'), 'utf8')
+    const pkg = JSON.parse(content) as { vbt?: Record<string, unknown> }
+    const config = { ...DEFAULT_CONFIG, ...pkg.vbt } as Required<Config>
+    expect(() => validateConfig(config)).not.toThrow()
+    warnSpy.mockRestore()
+  })
 })

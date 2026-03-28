@@ -63,10 +63,9 @@ Use [vbt.config.full.json](vbt.config.full.json):
 
 ```json
 {
-  "runPreBumpChecks": true,
-  "preBumpCheckCommand": "npm run lint && npm test && npm run build",
+  "preBumpCheck": "npm run lint && npm test && npm run build",
   "push": true,
-  "postBumpHookCommand": "npm publish"
+  "postBumpHook": "npm publish"
 }
 ```
 
@@ -74,13 +73,13 @@ Use [vbt.config.full.json](vbt.config.full.json):
 
 ```json
 {
-  "commit": false,
-  "tag": false,
-  "updatePackageJson": true
+  "commitMessage": false,
+  "tag": false
 }
 ```
 
-This only updates package.json without git operations.
+This only updates package.json and marked files without git operations.
+Note: setting `commitMessage` to `false` automatically disables `tag` and `push`.
 
 ### Scenario 4: Changelog + Lock File
 
@@ -97,8 +96,8 @@ This commits package.json, CHANGELOG.md, and package-lock.json together.
 
 ```json
 {
-  "tagName": "release-{{version}}",
-  "tagMessage": "🚀 Release {{version}}"
+  "tag": "release-{{version}}",
+  "tagMessage": "Release {{version}}"
 }
 ```
 
@@ -108,7 +107,7 @@ Creates tags like `release-1.2.3` instead of `v1.2.3`.
 
 ```json
 {
-  "annotatedTag": false
+  "tagMessage": false
 }
 ```
 
@@ -145,12 +144,11 @@ npm run vbt:patch  # 1.0.1-rc.0 -> 1.0.1
 
 ### Pattern 2: Multi-package Monorepo
 
-For individual packages in a monorepo:
+For individual packages in a monorepo, run vbt from each package directory (where its `package.json` lives):
 
 ```json
 {
-  "packageJsonPath": "./packages/my-package/package.json",
-  "tagName": "my-package-v{{version}}",
+  "tag": "my-package-v{{version}}",
   "commitMessage": "chore(my-package): release v{{version}}"
 }
 ```
@@ -159,7 +157,7 @@ For individual packages in a monorepo:
 
 ```json
 {
-  "commitFiles": ["README.md", "docs/**/*.md"],
+  "commitFiles": ["README.md"],
   "commitMessage": "docs: update for v{{version}}"
 }
 ```
@@ -171,6 +169,7 @@ For individual packages in a monorepo:
 3. Use `--verbose` to debug issues
 4. Keep sensitive operations (like `npm publish`) in post-bump hooks
 5. Add `[skip ci]` to commit messages if you don't want CI to run
+6. Unknown config keys will cause an error — check for typos
 
 ## More Information
 
