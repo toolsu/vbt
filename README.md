@@ -1,8 +1,8 @@
 # `vbt`: Version Bump Tag
 
-A CLI tool to bump versions in `package.json` and any marked files, create git tags, and commit changes.
+Lightweight CLI to bump package version, replace version strings in marked files, and create git commits and tags.
 
-[![npm package](https://img.shields.io/badge/npm%20i%20--g-vbt-blue)](https://www.npmjs.com/package/vbt) [![version number](https://img.shields.io/badge/version-v1.0.0-beta.1-orange)](https://www.npmjs.com/package/vbt?activeTab=versions) [![Actions Status](https://github.com/toolsu/vbt/workflows/Test/badge.svg)](https://github.com/toolsu/vbt/actions) [![License](https://img.shields.io/badge/license-MIT-brightgreen)](https://github.com/toolsu/vbt/blob/main/LICENSE)<!-- vbt-version -->
+[![npm package](https://img.shields.io/badge/npm%20i%20--g-vbt-blue)](https://www.npmjs.com/package/vbt) [![version number](https://img.shields.io/npm/v/vbt)](https://www.npmjs.com/package/vbt?activeTab=versions) [![Actions Status](https://github.com/toolsu/vbt/workflows/Test/badge.svg)](https://github.com/toolsu/vbt/actions) [![License](https://img.shields.io/badge/license-MIT-brightgreen)](https://github.com/toolsu/vbt/blob/main/LICENSE)<!-- vbt-version -->
 
 ## Install
 
