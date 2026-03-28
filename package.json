@@ -1,6 +1,6 @@
 {
   "name": "vbt",
-  "version": "0.1.0",
+  "version": "1.0.0-beta.0",
   "description": "A CLI tool to update package.json version, create git tags, and commit changes with configurable options",
   "keywords": [
     "version",
