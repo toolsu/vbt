@@ -1,6 +1,6 @@
 {
   "name": "vbt",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta.2",
   "description": "Lightweight CLI to bump package version, replace version strings in marked files, and create git commits and tags",
   "keywords": [
     "version",
