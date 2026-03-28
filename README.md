@@ -40,19 +40,19 @@ Mark lines in any file with `vbt-version` (or a custom marker via the `marker` c
 
 JavaScript / TypeScript:
 ```js
-const VERSION = "1.0.0"; // vbt-version
+const VERSION = "1.1.0"; // vbt-version
 ```
 
 Markdown / HTML:
 
 ```markdown
-Current version: 1.0.0 <!-- vbt-version -->
+Current version: 1.1.0 <!-- vbt-version -->
 ```
 
 TOML:
 
 ```toml
-version = "1.0.0" # vbt-version
+version = "1.1.0" # vbt-version
 ```
 
 Only the **old version** (read from the manifest file) on marked lines is replaced. Unmarked lines and other version-like strings are never touched.
@@ -64,7 +64,7 @@ Use `+N` to replace the version N lines below the marker. This is useful for cod
 ````markdown
 <!-- vbt-version +2 -->
 ```bash
-npm i -g vbt@1.0.0
+npm i -g vbt@1.1.0
 ```
 ````
 
