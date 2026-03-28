@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { type Config, DEFAULT_CONFIG } from '../src/types.js'
+import { DEFAULT_CONFIG, type ResolvedConfig } from '../src/types.js'
 
 vi.mock('node:child_process', () => ({
   execFileSync: vi.fn(),
@@ -18,13 +18,16 @@ vi.mock('../src/config.js', () => ({
   validateConfig: vi.fn(),
 }))
 
+vi.mock('../src/manifest.js', () => ({
+  getManifestHandler: vi.fn(),
+}))
+
 import { execFileSync, execSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { findProjectRoot, loadConfig, validateConfig } from '../src/config.js'
 import {
   applyFileUpdates,
   computeFileUpdates,
-  detectIndent,
   execGit,
   execShell,
   helpText,
@@ -34,6 +37,9 @@ import {
   run,
   VERSION,
 } from '../src/core.js'
+import { getManifestHandler } from '../src/manifest.js'
+
+const mockGetManifestHandler = vi.mocked(getManifestHandler)
 
 const mockExecFileSync = vi.mocked(execFileSync)
 const mockExecSync = vi.mocked(execSync)
@@ -44,12 +50,12 @@ const mockFindProjectRoot = vi.mocked(findProjectRoot)
 const mockLoadConfig = vi.mocked(loadConfig)
 const mockValidateConfig = vi.mocked(validateConfig)
 
-function makeConfig(overrides: Partial<Config> = {}): Required<Config> {
+function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
   return {
     ...DEFAULT_CONFIG,
     requireCleanWorkingDirectory: false,
     ...overrides,
-  } as Required<Config>
+  } as ResolvedConfig
 }
 
 /**
@@ -63,7 +69,7 @@ function defaultExecFileSyncMock(_file: unknown, args: unknown) {
   return Buffer.from('')
 }
 
-function setupMocks(config?: Partial<Config>, packageJson?: Record<string, unknown>) {
+function setupMocks(config?: Partial<ResolvedConfig>, packageJson?: Record<string, unknown>) {
   const pkg = packageJson ?? { name: 'test', version: '1.0.0' }
   const content = `${JSON.stringify(pkg, null, 2)}\n`
 
@@ -73,6 +79,20 @@ function setupMocks(config?: Partial<Config>, packageJson?: Record<string, unkno
   mockReadFileSync.mockReturnValue(content)
   mockExecFileSync.mockImplementation(defaultExecFileSyncMock)
   mockExecSync.mockReturnValue(Buffer.from(''))
+  mockGetManifestHandler.mockReturnValue({
+    readVersion: (c: string) => {
+      const data = JSON.parse(c)
+      return data.version && typeof data.version === 'string' ? data.version : null
+    },
+    writeVersion: (c: string, _old: string, newVer: string) => {
+      const data = JSON.parse(c)
+      data.version = newVer
+      const hasFinalNewline = c.endsWith('\n')
+      let result = JSON.stringify(data, null, 2)
+      if (hasFinalNewline) result += '\n'
+      return result
+    },
+  })
 }
 
 function gitCalls(): string[][] {
@@ -260,24 +280,6 @@ describe('replaceTemplate', () => {
 
   it('leaves {{oldVersion}} intact when oldVersion not provided', () => {
     expect(replaceTemplate('v{{oldVersion}}', '1.0.0')).toBe('v{{oldVersion}}')
-  })
-})
-
-describe('detectIndent', () => {
-  it('detects 2-space indent', () => {
-    expect(detectIndent('{\n  "name": "test"\n}')).toBe(2)
-  })
-
-  it('detects 4-space indent', () => {
-    expect(detectIndent('{\n    "name": "test"\n}')).toBe(4)
-  })
-
-  it('detects tab indent', () => {
-    expect(detectIndent('{\n\t"name": "test"\n}')).toBe('\t')
-  })
-
-  it('returns 2 as default when no indent found', () => {
-    expect(detectIndent('{}')).toBe(2)
   })
 })
 
@@ -678,17 +680,17 @@ describe('run', () => {
     await expect(run(['foobar'])).rejects.toThrow('Invalid version number or release type: foobar')
   })
 
-  it('throws when package.json has no version', async () => {
+  it('throws when manifest has no version', async () => {
     setupMocks(undefined, { name: 'test' })
-    await expect(run(['patch'])).rejects.toThrow('No version field found in package.json')
+    await expect(run(['patch'])).rejects.toThrow('No version field found')
   })
 
-  it('throws when package.json not found', async () => {
+  it('throws when manifest not found', async () => {
     mockFindProjectRoot.mockReturnValue('/fake/project')
     mockLoadConfig.mockResolvedValue(makeConfig())
     mockExistsSync.mockReturnValue(false)
 
-    await expect(run(['patch'])).rejects.toThrow('package.json not found')
+    await expect(run(['patch'])).rejects.toThrow('Manifest file not found')
   })
 
   it('checks clean working directory', async () => {
@@ -718,6 +720,14 @@ describe('run', () => {
       if (args && (args as string[])[0] === 'rev-parse')
         throw new Error('fatal: not a valid object name')
       return Buffer.from('')
+    })
+    mockGetManifestHandler.mockReturnValue({
+      readVersion: () => '1.0.0',
+      writeVersion: (c: string, _old: string, newVer: string) => {
+        const data = JSON.parse(c)
+        data.version = newVer
+        return `${JSON.stringify(data, null, 2)}\n`
+      },
     })
 
     await run(['patch'])
@@ -875,6 +885,17 @@ describe('run', () => {
     mockExistsSync.mockReturnValue(true)
     mockReadFileSync.mockReturnValue('{"name":"test","version":"1.0.0"}')
     mockExecFileSync.mockImplementation(defaultExecFileSyncMock)
+    mockGetManifestHandler.mockReturnValue({
+      readVersion: () => '1.0.0',
+      writeVersion: (c: string, _old: string, newVer: string) => {
+        const data = JSON.parse(c)
+        data.version = newVer
+        const hasFinalNewline = c.endsWith('\n')
+        let result = JSON.stringify(data, null, 2)
+        if (hasFinalNewline) result += '\n'
+        return result
+      },
+    })
 
     await run(['patch'])
 
@@ -888,6 +909,17 @@ describe('run', () => {
     mockExistsSync.mockReturnValue(true)
     mockReadFileSync.mockReturnValue('{\n    "name": "test",\n    "version": "1.0.0"\n}\n')
     mockExecFileSync.mockImplementation(defaultExecFileSyncMock)
+    mockGetManifestHandler.mockReturnValue({
+      readVersion: () => '1.0.0',
+      writeVersion: (c: string, _old: string, newVer: string) => {
+        const data = JSON.parse(c)
+        data.version = newVer
+        const hasFinalNewline = c.endsWith('\n')
+        let result = JSON.stringify(data, null, 4)
+        if (hasFinalNewline) result += '\n'
+        return result
+      },
+    })
 
     await run(['patch'])
 
@@ -938,6 +970,14 @@ describe('run', () => {
       return '{\n  "name": "test",\n  "version": "1.0.0"\n}\n'
     })
     mockExecFileSync.mockImplementation(defaultExecFileSyncMock)
+    mockGetManifestHandler.mockReturnValue({
+      readVersion: () => '1.0.0',
+      writeVersion: (c: string, _old: string, newVer: string) => {
+        const data = JSON.parse(c)
+        data.version = newVer
+        return `${JSON.stringify(data, null, 2)}\n`
+      },
+    })
 
     await run(['patch'])
 
@@ -1043,6 +1083,14 @@ describe('run', () => {
     mockExistsSync.mockReturnValue(true)
     mockReadFileSync.mockReturnValue('{"name":"test","version":"1.0.0"}\n')
     mockExecFileSync.mockImplementation(defaultExecFileSyncMock)
+    mockGetManifestHandler.mockReturnValue({
+      readVersion: () => '1.0.0',
+      writeVersion: (c: string, _old: string, newVer: string) => {
+        const data = JSON.parse(c)
+        data.version = newVer
+        return `${JSON.stringify(data, null, 2)}\n`
+      },
+    })
 
     await run(['patch'])
     expect(mockWriteFileSync).toHaveBeenCalled()
@@ -1054,6 +1102,14 @@ describe('run', () => {
     mockExistsSync.mockReturnValue(true)
     mockReadFileSync.mockReturnValue('{"name":"test","version":"invalid"}\n')
     mockExecFileSync.mockImplementation(defaultExecFileSyncMock)
+    mockGetManifestHandler.mockReturnValue({
+      readVersion: () => 'invalid',
+      writeVersion: (c: string, _old: string, newVer: string) => {
+        const data = JSON.parse(c)
+        data.version = newVer
+        return `${JSON.stringify(data, null, 2)}\n`
+      },
+    })
 
     await expect(run(['patch'])).rejects.toThrow('Failed to calculate new version')
   })
@@ -1083,12 +1139,20 @@ describe('run', () => {
     )
   })
 
-  it('resolves packageJson relative to projectRoot', async () => {
+  it('resolves manifest relative to projectRoot', async () => {
     mockFindProjectRoot.mockReturnValue('/my/root')
-    mockLoadConfig.mockResolvedValue(makeConfig({ packageJson: './sub/package.json' }))
+    mockLoadConfig.mockResolvedValue(makeConfig({ manifest: './sub/package.json' }))
     mockExistsSync.mockReturnValue(true)
     mockReadFileSync.mockReturnValue('{"name":"test","version":"1.0.0"}\n')
     mockExecFileSync.mockImplementation(defaultExecFileSyncMock)
+    mockGetManifestHandler.mockReturnValue({
+      readVersion: () => '1.0.0',
+      writeVersion: (c: string, _old: string, newVer: string) => {
+        const data = JSON.parse(c)
+        data.version = newVer
+        return `${JSON.stringify(data, null, 2)}\n`
+      },
+    })
 
     await run(['patch'])
 

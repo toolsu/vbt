@@ -1,7 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import type { Config } from './types.js'
+import { getManifestHandler } from './manifest.js'
+import type { Config, ResolvedConfig } from './types.js'
 import { DEFAULT_CONFIG } from './types.js'
 
 /**
@@ -9,15 +10,20 @@ import { DEFAULT_CONFIG } from './types.js'
  */
 const CONFIG_FILE_NAMES = ['vbt.config.json', 'vbt.config.js', 'vbt.config.mjs', 'vbt.config.cjs']
 
-const VALID_CONFIG_KEYS = new Set(Object.keys(DEFAULT_CONFIG))
+const VALID_CONFIG_KEYS = new Set([...Object.keys(DEFAULT_CONFIG), 'packageJson', 'version'])
 
 /**
- * Find the project root by looking for package.json
+ * Marker files that indicate a project root (package.json or any vbt config file)
+ */
+const PROJECT_ROOT_MARKERS = ['package.json', ...CONFIG_FILE_NAMES]
+
+/**
+ * Find the project root by looking for package.json or a vbt config file
  */
 export function findProjectRoot(startPath: string = process.cwd()): string {
   let currentPath = startPath
   while (currentPath !== dirname(currentPath)) {
-    if (existsSync(resolve(currentPath, 'package.json'))) {
+    if (PROJECT_ROOT_MARKERS.some((m) => existsSync(resolve(currentPath, m)))) {
       return currentPath
     }
     currentPath = dirname(currentPath)
@@ -104,18 +110,38 @@ async function loadCustomConfig(
 }
 
 /**
+ * Resolve deprecated packageJson alias to manifest
+ */
+function resolvePackageJsonAlias(config: Partial<Config>): Partial<Config> {
+  if (config.packageJson !== undefined) {
+    if (config.manifest !== undefined) {
+      throw new Error(
+        'Config error: cannot set both "manifest" and "packageJson". Use "manifest" only (packageJson is deprecated).',
+      )
+    }
+    const { packageJson, ...rest } = config
+    return { ...rest, manifest: packageJson }
+  }
+  return config
+}
+
+/**
  * Merge configurations with priority: CLI options > custom config > config file > package.json > defaults
  */
-function mergeConfigs(...configs: (Partial<Config> | null)[]): Required<Config> {
-  const merged: Config = { ...DEFAULT_CONFIG }
+function mergeConfigs(...configs: (Partial<Config> | null)[]): ResolvedConfig {
+  const merged: Record<string, unknown> = { ...DEFAULT_CONFIG }
 
   for (const config of configs) {
     if (config) {
-      Object.assign(merged, config)
+      Object.assign(merged, resolvePackageJsonAlias(config))
     }
   }
 
-  return merged as Required<Config>
+  // Strip packageJson and version keys from merged result
+  delete merged.packageJson
+  delete merged.version
+
+  return merged as ResolvedConfig
 }
 
 /**
@@ -125,7 +151,7 @@ export async function loadConfig(
   customConfigPath?: string,
   cliOverrides?: Partial<Config>,
   projectRoot?: string,
-): Promise<Required<Config>> {
+): Promise<ResolvedConfig> {
   const root = projectRoot ?? findProjectRoot()
 
   // Load from different sources
@@ -177,7 +203,7 @@ function validateFieldType(
 /**
  * Validate configuration
  */
-export function validateConfig(config: Required<Config>): void {
+export function validateConfig(config: ResolvedConfig): void {
   // Check for unknown keys
   for (const key of Object.keys(config)) {
     if (!VALID_CONFIG_KEYS.has(key)) {
@@ -190,7 +216,7 @@ export function validateConfig(config: Required<Config>): void {
   // Type checks
   validateFieldType('requireCleanWorkingDirectory', config.requireCleanWorkingDirectory, 'boolean')
   validateFieldType('preBumpCheck', config.preBumpCheck, 'string|false')
-  validateFieldType('packageJson', config.packageJson, 'string')
+  validateFieldType('manifest', config.manifest, 'string')
   validateFieldType('files', config.files, 'string[]')
   validateFieldType('marker', config.marker, 'string')
   validateFieldType('commitMessage', config.commitMessage, 'string|false')
@@ -203,8 +229,13 @@ export function validateConfig(config: Required<Config>): void {
   validateFieldType('dryRun', config.dryRun, 'boolean')
 
   // Value checks
-  if (typeof config.packageJson === 'string' && !config.packageJson) {
-    throw new Error('Config error: "packageJson" path cannot be an empty string')
+  if (typeof config.manifest === 'string' && !config.manifest) {
+    throw new Error('Config error: "manifest" path cannot be an empty string')
+  }
+
+  // Validate manifest filename is supported
+  if (typeof config.manifest === 'string' && config.manifest) {
+    getManifestHandler(config.manifest)
   }
 
   // Template placeholder checks

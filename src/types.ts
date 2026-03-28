@@ -30,8 +30,15 @@ export interface Config {
   preBumpCheck?: string | false
 
   /**
-   * Path to package.json to update (relative to project root).
+   * Path to manifest file to update (relative to project root).
+   * Supported: package.json, composer.json, deno.json, deno.jsonc, jsr.json, jsr.jsonc,
+   * Cargo.toml, pyproject.toml, pubspec.yaml, vbt.config.json.
    * @default "./package.json"
+   */
+  manifest?: string
+
+  /**
+   * @deprecated Use `manifest` instead.
    */
   packageJson?: string
 
@@ -55,7 +62,7 @@ export interface Config {
   commitMessage?: string | false
 
   /**
-   * Additional files to stage for commit (beyond package.json and marker-replaced files).
+   * Additional files to stage for commit (beyond manifest and marker-replaced files).
    * @default []
    */
   commitFiles?: string[]
@@ -100,10 +107,10 @@ export interface Config {
 /**
  * Default configuration values
  */
-export const DEFAULT_CONFIG: Required<Config> = {
+export const DEFAULT_CONFIG: Required<Omit<Config, 'packageJson'>> = {
   requireCleanWorkingDirectory: true,
   preBumpCheck: false,
-  packageJson: './package.json',
+  manifest: './package.json',
   files: [],
   marker: 'vbt-version',
   commitMessage: 'chore: bump version to v{{version}}',
@@ -115,3 +122,5 @@ export const DEFAULT_CONFIG: Required<Config> = {
   verbose: false,
   dryRun: false,
 }
+
+export type ResolvedConfig = Required<Omit<Config, 'packageJson'>>

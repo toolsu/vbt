@@ -1,8 +1,9 @@
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { type Config, DEFAULT_CONFIG } from '../src/types.js'
+import { DEFAULT_CONFIG, type ResolvedConfig } from '../src/types.js'
+import { SUPPORTED_MANIFEST_NAMES } from '../src/manifest.js'
 
-const VALID_KEYS = new Set(Object.keys(DEFAULT_CONFIG))
+const VALID_KEYS = new Set([...Object.keys(DEFAULT_CONFIG), 'packageJson'])
 const actualFs = await vi.importActual<typeof import('node:fs')>('node:fs')
 
 vi.mock('node:fs', () => ({
@@ -44,6 +45,49 @@ describe('findProjectRoot', () => {
   it('uses process.cwd() as default', () => {
     mockExistsSync.mockImplementation((p) => String(p) === '/fake/project/package.json')
     expect(findProjectRoot()).toBe('/fake/project')
+  })
+
+  it('finds root via vbt.config.json', () => {
+    mockExistsSync.mockImplementation((p) => String(p) === '/fake/project/vbt.config.json')
+    expect(findProjectRoot('/fake/project')).toBe('/fake/project')
+  })
+
+  it('walks up to find vbt.config.json', () => {
+    mockExistsSync.mockImplementation((p) => String(p) === '/fake/vbt.config.json')
+    expect(findProjectRoot('/fake/project/nested')).toBe('/fake')
+  })
+
+  it('prefers closer file (either package.json or vbt.config.json)', () => {
+    mockExistsSync.mockImplementation((p) => {
+      const path = String(p)
+      return (
+        path === '/fake/project/nested/package.json' || path === '/fake/project/vbt.config.json'
+      )
+    })
+    expect(findProjectRoot('/fake/project/nested')).toBe('/fake/project/nested')
+  })
+
+  it('finds nearer vbt.config.json over farther package.json', () => {
+    mockExistsSync.mockImplementation((p) => {
+      const path = String(p)
+      return path === '/fake/project/vbt.config.json' || path === '/fake/package.json'
+    })
+    expect(findProjectRoot('/fake/project')).toBe('/fake/project')
+  })
+
+  it('finds root via vbt.config.js', () => {
+    mockExistsSync.mockImplementation((p) => String(p) === '/fake/project/vbt.config.js')
+    expect(findProjectRoot('/fake/project')).toBe('/fake/project')
+  })
+
+  it('finds root via vbt.config.mjs', () => {
+    mockExistsSync.mockImplementation((p) => String(p) === '/fake/project/vbt.config.mjs')
+    expect(findProjectRoot('/fake/project')).toBe('/fake/project')
+  })
+
+  it('finds root via vbt.config.cjs', () => {
+    mockExistsSync.mockImplementation((p) => String(p) === '/fake/project/vbt.config.cjs')
+    expect(findProjectRoot('/fake/project')).toBe('/fake/project')
   })
 })
 
@@ -323,16 +367,49 @@ describe('loadConfig', () => {
     const config = await loadConfig('./sub/my.json')
     expect(config.push).toBe(true)
   })
+
+  it('maps packageJson to manifest', async () => {
+    mockExistsSync.mockImplementation((p) => {
+      const path = String(p)
+      return path.endsWith('package.json') || path.endsWith('vbt.config.json')
+    })
+    mockReadFileSync.mockImplementation((p) => {
+      const path = String(p)
+      if (path.endsWith('vbt.config.json'))
+        return JSON.stringify({ packageJson: './custom/package.json' })
+      return JSON.stringify({ name: 'test', version: '1.0.0' })
+    })
+
+    const config = await loadConfig()
+    expect(config.manifest).toBe('./custom/package.json')
+    expect(config).not.toHaveProperty('packageJson')
+  })
+
+  it('loads config without package.json (non-Node project)', async () => {
+    mockExistsSync.mockImplementation((p) => {
+      const path = String(p)
+      return path.endsWith('vbt.config.json')
+    })
+    mockReadFileSync.mockImplementation((p) => {
+      if (String(p).endsWith('vbt.config.json'))
+        return JSON.stringify({ manifest: './Cargo.toml', push: true })
+      throw new Error('file not found')
+    })
+
+    const config = await loadConfig(undefined, undefined, '/fake/project')
+    expect(config.manifest).toBe('./Cargo.toml')
+    expect(config.push).toBe(true)
+  })
 })
 
 describe('validateConfig', () => {
-  function makeConfig(overrides: Partial<Config> = {}): Required<Config> {
-    return { ...DEFAULT_CONFIG, ...overrides } as Required<Config>
+  function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
+    return { ...DEFAULT_CONFIG, ...overrides } as ResolvedConfig
   }
 
   /** Like makeConfig but accepts arbitrary values for testing type validation */
-  function makeInvalidConfig(overrides: Record<string, unknown>): Required<Config> {
-    return { ...DEFAULT_CONFIG, ...overrides } as Required<Config>
+  function makeInvalidConfig(overrides: Record<string, unknown>): ResolvedConfig {
+    return { ...DEFAULT_CONFIG, ...overrides } as ResolvedConfig
   }
 
   it('accepts valid default config without warnings', () => {
@@ -342,18 +419,18 @@ describe('validateConfig', () => {
     expect(warnSpy).not.toHaveBeenCalled()
   })
 
-  it('throws on empty packageJson string', () => {
-    const config = makeConfig({ packageJson: '' })
-    expect(() => validateConfig(config)).toThrow('packageJson')
+  it('throws on empty manifest string', () => {
+    const config = makeConfig({ manifest: '' })
+    expect(() => validateConfig(config)).toThrow('manifest')
   })
 
   it('throws on unknown config keys', () => {
-    const config = { ...DEFAULT_CONFIG, unknownKey: true } as Required<Config>
+    const config = { ...DEFAULT_CONFIG, unknownKey: true } as ResolvedConfig
     expect(() => validateConfig(config)).toThrow('Unknown configuration option: "unknownKey"')
   })
 
   it('throws on multiple unknown keys (reports first)', () => {
-    const config = { ...DEFAULT_CONFIG, foo: 1, bar: 2 } as Required<Config>
+    const config = { ...DEFAULT_CONFIG, foo: 1, bar: 2 } as ResolvedConfig
     expect(() => validateConfig(config)).toThrow('Unknown configuration option')
   })
 
@@ -367,9 +444,9 @@ describe('validateConfig', () => {
     expect(() => validateConfig(config)).toThrow('"preBumpCheck" must be a string or false')
   })
 
-  it('throws when packageJson is not string', () => {
-    const config = makeInvalidConfig({ packageJson: false })
-    expect(() => validateConfig(config)).toThrow('"packageJson" must be a string')
+  it('throws when manifest is not string', () => {
+    const config = makeInvalidConfig({ manifest: false })
+    expect(() => validateConfig(config)).toThrow('"manifest" must be a string')
   })
 
   it('throws when files is not string array', () => {
@@ -425,6 +502,28 @@ describe('validateConfig', () => {
   it('throws when dryRun is not boolean', () => {
     const config = makeInvalidConfig({ dryRun: 1 })
     expect(() => validateConfig(config)).toThrow('"dryRun" must be a boolean')
+  })
+
+  it('throws on unsupported manifest filename', () => {
+    const config = makeConfig({ manifest: './unknown.xml' })
+    expect(() => validateConfig(config)).toThrow('Unsupported manifest file')
+  })
+
+  it('accepts all supported manifest filenames', () => {
+    for (const name of SUPPORTED_MANIFEST_NAMES) {
+      const config = makeConfig({ manifest: `./${name}` })
+      expect(() => validateConfig(config)).not.toThrow()
+    }
+  })
+
+  it('accepts manifest with directory prefix', () => {
+    const config = makeConfig({ manifest: './some/path/package.json' })
+    expect(() => validateConfig(config)).not.toThrow()
+  })
+
+  it('allows version key (for vbt.config.json as manifest)', () => {
+    const config = { ...DEFAULT_CONFIG, version: '1.0.0' } as unknown as ResolvedConfig
+    expect(() => validateConfig(config)).not.toThrow()
   })
 
   it('warns and resets commitMessage without {{version}}', () => {
@@ -517,7 +616,7 @@ describe('example config files', () => {
     it(`${file} passes validation when merged with defaults`, () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
       const content = actualFs.readFileSync(resolve(examplesDir, file), 'utf8')
-      const config = { ...DEFAULT_CONFIG, ...JSON.parse(content) } as Required<Config>
+      const config = { ...DEFAULT_CONFIG, ...JSON.parse(content) } as ResolvedConfig
       expect(() => validateConfig(config)).not.toThrow()
       warnSpy.mockRestore()
     })
@@ -536,7 +635,7 @@ describe('example config files', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const content = actualFs.readFileSync(resolve(examplesDir, 'package.json'), 'utf8')
     const pkg = JSON.parse(content) as { vbt?: Record<string, unknown> }
-    const config = { ...DEFAULT_CONFIG, ...pkg.vbt } as Required<Config>
+    const config = { ...DEFAULT_CONFIG, ...pkg.vbt } as ResolvedConfig
     expect(() => validateConfig(config)).not.toThrow()
     warnSpy.mockRestore()
   })

@@ -18,10 +18,18 @@ describe('RELEASE_TYPES', () => {
 })
 
 describe('DEFAULT_CONFIG', () => {
+  it('has manifest defaulting to ./package.json', () => {
+    expect(DEFAULT_CONFIG.manifest).toBe('./package.json')
+  })
+
+  it('does not have packageJson key', () => {
+    expect(DEFAULT_CONFIG).not.toHaveProperty('packageJson')
+  })
+
   it('has correct default values', () => {
     expect(DEFAULT_CONFIG.requireCleanWorkingDirectory).toBe(true)
     expect(DEFAULT_CONFIG.preBumpCheck).toBe(false)
-    expect(DEFAULT_CONFIG.packageJson).toBe('./package.json')
+    expect(DEFAULT_CONFIG.manifest).toBe('./package.json')
     expect(DEFAULT_CONFIG.files).toEqual([])
     expect(DEFAULT_CONFIG.marker).toBe('vbt-version')
     expect(DEFAULT_CONFIG.commitMessage).toBe('chore: bump version to v{{version}}')
@@ -40,7 +48,7 @@ describe('DEFAULT_CONFIG', () => {
     }
   })
 
-  it('packageJson is a string (not string|false)', () => {
-    expect(typeof DEFAULT_CONFIG.packageJson).toBe('string')
+  it('manifest is a string (not string|false)', () => {
+    expect(typeof DEFAULT_CONFIG.manifest).toBe('string')
   })
 })

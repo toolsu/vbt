@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { inc, valid } from 'semver-ts'
 import { findProjectRoot, loadConfig, validateConfig } from './config.js'
+import { getManifestHandler } from './manifest.js'
 import { RELEASE_TYPES, type ReleaseType } from './types.js'
 
 const require = createRequire(import.meta.url)
@@ -50,7 +51,7 @@ CONFIGURATION:
   Create a config file in your project root:
   - vbt.config.json
   - vbt.config.js (.mjs, .cjs)
-  - Or add "vbt" key to package.json
+  - Or add "vbt" key to package.json (use "manifest" option for non-npm projects)
 
   Use {{version}} in templates. Use {{oldVersion}} for the previous version.
   See documentation for all available options.
@@ -144,20 +145,6 @@ export function replaceTemplate(template: string, version: string, oldVersion?: 
     result = result.replace(/\{\{oldVersion\}\}/g, oldVersion)
   }
   return result
-}
-
-/**
- * Detect indentation used in a JSON file
- */
-export function detectIndent(content: string): string | number {
-  const lines = content.split('\n')
-  for (const line of lines.slice(1)) {
-    const match = line.match(/^(\s+)/)
-    if (match) {
-      return match[1].includes('\t') ? '\t' : match[1].length
-    }
-  }
-  return 2
 }
 
 /**
@@ -309,7 +296,7 @@ export async function run(args: string[]): Promise<void> {
     )
   }
 
-  // Find project root (where package.json lives)
+  // Find project root (where package.json or vbt.config.json lives)
   const projectRoot = findProjectRoot()
 
   // Load configuration
@@ -361,18 +348,18 @@ export async function run(args: string[]): Promise<void> {
     console.log('Pre-bump checks passed.')
   }
 
-  // Read current version from package.json
-  const packageJsonPath = resolve(projectRoot, config.packageJson)
-  if (!existsSync(packageJsonPath)) {
-    throw new Error(`package.json not found at ${packageJsonPath}`)
+  // Read current version from manifest
+  const manifestPath = resolve(projectRoot, config.manifest)
+  if (!existsSync(manifestPath)) {
+    throw new Error(`Manifest file not found at ${manifestPath}`)
   }
 
-  const packageJsonContent = readFileSync(packageJsonPath, 'utf8')
-  const packageJsonData = JSON.parse(packageJsonContent)
-  const oldVersion = packageJsonData.version as string
+  const manifestContent = readFileSync(manifestPath, 'utf8')
+  const handler = getManifestHandler(config.manifest)
+  const oldVersion = handler.readVersion(manifestContent)
 
   if (!oldVersion) {
-    throw new Error('No version field found in package.json')
+    throw new Error(`No version field found in ${config.manifest}`)
   }
 
   // Calculate new version
@@ -421,14 +408,7 @@ export async function run(args: string[]): Promise<void> {
   }
 
   // Pre-compute all file changes in memory
-  const hasFinalNewline = packageJsonContent.endsWith('\n')
-  const indent = detectIndent(packageJsonContent)
-  packageJsonData.version = newVersion
-
-  let updatedPackageJson = JSON.stringify(packageJsonData, null, indent)
-  if (hasFinalNewline) {
-    updatedPackageJson += '\n'
-  }
+  const updatedManifest = handler.writeVersion(manifestContent, oldVersion, newVersion)
 
   const { updates: fileUpdates, modifiedFiles } = computeFileUpdates(
     config.files,
@@ -445,12 +425,12 @@ export async function run(args: string[]): Promise<void> {
   let createdTagName = ''
 
   try {
-    // Write package.json
+    // Write manifest
     if (!dryRun) {
-      writeFileSync(packageJsonPath, updatedPackageJson, 'utf8')
-      console.log(`✓ Updated version in ${config.packageJson}`)
+      writeFileSync(manifestPath, updatedManifest, 'utf8')
+      console.log(`✓ Updated version in ${config.manifest}`)
     } else {
-      console.log(`[DRY RUN] Would update version in ${config.packageJson}`)
+      console.log(`[DRY RUN] Would update version in ${config.manifest}`)
     }
 
     // Write marked files
@@ -459,7 +439,7 @@ export async function run(args: string[]): Promise<void> {
     // Git commit
     if (config.commitMessage) {
       const commitMessage = replaceTemplate(config.commitMessage as string, newVersion, oldVersion)
-      const filesToCommit = [config.packageJson, ...modifiedFiles, ...config.commitFiles]
+      const filesToCommit = [config.manifest, ...modifiedFiles, ...config.commitFiles]
 
       for (const file of filesToCommit) {
         execGit(['add', file], `Stage ${file}`, dryRun, verbose, projectRoot)
@@ -479,7 +459,7 @@ export async function run(args: string[]): Promise<void> {
     // Rollback: restore original file contents.
     // This catch is only reachable when !dryRun (dry-run never calls writeFileSync/execFileSync).
     try {
-      writeFileSync(packageJsonPath, packageJsonContent, 'utf8')
+      writeFileSync(manifestPath, manifestContent, 'utf8')
     } catch {
       // Best-effort rollback; if this fails too, the original error is more important
     }

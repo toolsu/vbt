@@ -237,3 +237,170 @@ describe('integration', () => {
     expect(content).toContain('"1.0.1"')
   })
 })
+
+describe('manifest types', () => {
+  let tempDir: string
+
+  beforeAll(() => {
+    if (!existsSync(VBT_BIN)) {
+      execSync('npm run build', { cwd: PROJECT_ROOT, stdio: 'pipe' })
+    }
+  })
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), 'vbt-manifest-'))
+    execSync('git init', { cwd: tempDir, stdio: 'pipe' })
+    execSync('git config user.email "test@test.com"', { cwd: tempDir, stdio: 'pipe' })
+    execSync('git config user.name "Test"', { cwd: tempDir, stdio: 'pipe' })
+  })
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true })
+  })
+
+  it('bumps Cargo.toml', () => {
+    writeFileSync(
+      join(tempDir, 'Cargo.toml'),
+      '[package]\nname = "my-crate"\nversion = "1.0.0"\nedition = "2021"\n',
+    )
+    writeFileSync(join(tempDir, 'vbt.config.json'), JSON.stringify({ manifest: 'Cargo.toml' }))
+    execSync('git add -A && git commit -m "init"', { cwd: tempDir, stdio: 'pipe' })
+
+    runVbt('patch', tempDir)
+
+    const content = readFileSync(join(tempDir, 'Cargo.toml'), 'utf8')
+    expect(content).toContain('version = "1.0.1"')
+    expect(getTags(tempDir)).toContain('v1.0.1')
+  })
+
+  it('bumps pyproject.toml', () => {
+    writeFileSync(
+      join(tempDir, 'pyproject.toml'),
+      [
+        '[build-system]',
+        'requires = ["setuptools"]',
+        '',
+        '[project]',
+        'name = "my-pkg"',
+        'version = "1.0.0"',
+        '',
+        '[tool.pytest]',
+        'addopts = "-v"',
+        '',
+      ].join('\n'),
+    )
+    writeFileSync(join(tempDir, 'vbt.config.json'), JSON.stringify({ manifest: 'pyproject.toml' }))
+    execSync('git add -A && git commit -m "init"', { cwd: tempDir, stdio: 'pipe' })
+
+    runVbt('patch', tempDir)
+
+    const content = readFileSync(join(tempDir, 'pyproject.toml'), 'utf8')
+    expect(content).toContain('version = "1.0.1"')
+    // Other sections untouched
+    expect(content).toContain('[build-system]')
+    expect(content).toContain('requires = ["setuptools"]')
+    expect(content).toContain('[tool.pytest]')
+    expect(content).toContain('addopts = "-v"')
+  })
+
+  it('bumps pubspec.yaml', () => {
+    writeFileSync(
+      join(tempDir, 'pubspec.yaml'),
+      'name: my_app\nversion: 1.0.0\ndescription: A test app\n',
+    )
+    writeFileSync(join(tempDir, 'vbt.config.json'), JSON.stringify({ manifest: 'pubspec.yaml' }))
+    execSync('git add -A && git commit -m "init"', { cwd: tempDir, stdio: 'pipe' })
+
+    runVbt('patch', tempDir)
+
+    const content = readFileSync(join(tempDir, 'pubspec.yaml'), 'utf8')
+    expect(content).toContain('version: 1.0.1')
+    expect(getTags(tempDir)).toContain('v1.0.1')
+  })
+
+  it('bumps composer.json', () => {
+    writeFileSync(
+      join(tempDir, 'composer.json'),
+      `${JSON.stringify({ name: 'vendor/pkg', version: '1.0.0' }, null, 2)}\n`,
+    )
+    writeFileSync(join(tempDir, 'vbt.config.json'), JSON.stringify({ manifest: 'composer.json' }))
+    execSync('git add -A && git commit -m "init"', { cwd: tempDir, stdio: 'pipe' })
+
+    runVbt('patch', tempDir)
+
+    const content = JSON.parse(readFileSync(join(tempDir, 'composer.json'), 'utf8'))
+    expect(content.version).toBe('1.0.1')
+    expect(content.name).toBe('vendor/pkg')
+    expect(getTags(tempDir)).toContain('v1.0.1')
+  })
+
+  it('bumps deno.json', () => {
+    writeFileSync(
+      join(tempDir, 'deno.json'),
+      `${JSON.stringify({ name: 'my-deno-pkg', version: '1.0.0' }, null, 2)}\n`,
+    )
+    writeFileSync(join(tempDir, 'vbt.config.json'), JSON.stringify({ manifest: 'deno.json' }))
+    execSync('git add -A && git commit -m "init"', { cwd: tempDir, stdio: 'pipe' })
+
+    runVbt('patch', tempDir)
+
+    const content = JSON.parse(readFileSync(join(tempDir, 'deno.json'), 'utf8'))
+    expect(content.version).toBe('1.0.1')
+    expect(content.name).toBe('my-deno-pkg')
+    expect(getTags(tempDir)).toContain('v1.0.1')
+  })
+
+  it('bumps vbt.config.json as manifest', () => {
+    writeFileSync(
+      join(tempDir, 'vbt.config.json'),
+      `${JSON.stringify({ manifest: 'vbt.config.json', version: '1.0.0' }, null, 2)}\n`,
+    )
+    execSync('git add -A && git commit -m "init"', { cwd: tempDir, stdio: 'pipe' })
+
+    runVbt('patch', tempDir)
+
+    const content = JSON.parse(readFileSync(join(tempDir, 'vbt.config.json'), 'utf8'))
+    expect(content.version).toBe('1.0.1')
+    expect(content.manifest).toBe('vbt.config.json')
+    expect(getTags(tempDir)).toContain('v1.0.1')
+  })
+
+  it('backward compat: packageJson alias works', () => {
+    writeFileSync(
+      join(tempDir, 'package.json'),
+      `${JSON.stringify({ name: 'test-pkg', version: '1.0.0' }, null, 2)}\n`,
+    )
+    writeFileSync(
+      join(tempDir, 'vbt.config.json'),
+      JSON.stringify({ packageJson: './package.json' }),
+    )
+    execSync('git add -A && git commit -m "init"', { cwd: tempDir, stdio: 'pipe' })
+
+    runVbt('patch', tempDir)
+
+    expect(readPkg(tempDir).version).toBe('1.0.1')
+    expect(getTags(tempDir)).toContain('v1.0.1')
+  })
+
+  it('rejects both manifest and packageJson set', () => {
+    writeFileSync(
+      join(tempDir, 'package.json'),
+      `${JSON.stringify({ name: 'test-pkg', version: '1.0.0' }, null, 2)}\n`,
+    )
+    writeFileSync(
+      join(tempDir, 'vbt.config.json'),
+      JSON.stringify({ manifest: './package.json', packageJson: './package.json' }),
+    )
+    execSync('git add -A && git commit -m "init"', { cwd: tempDir, stdio: 'pipe' })
+
+    expect(() => runVbt('patch', tempDir)).toThrow()
+  })
+
+  it('rejects unsupported manifest', () => {
+    writeFileSync(join(tempDir, 'setup.py'), 'version = "1.0.0"\n')
+    writeFileSync(join(tempDir, 'vbt.config.json'), JSON.stringify({ manifest: 'setup.py' }))
+    execSync('git add -A && git commit -m "init"', { cwd: tempDir, stdio: 'pipe' })
+
+    expect(() => runVbt('patch', tempDir)).toThrow()
+  })
+})

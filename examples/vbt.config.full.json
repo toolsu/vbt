@@ -1,7 +1,7 @@
 {
   "requireCleanWorkingDirectory": true,
   "preBumpCheck": "npm run lint && npm run typecheck && npm test && npm run build",
-  "packageJson": "./package.json",
+  "manifest": "./package.json",
   "files": ["src/version.ts", "README.md"],
   "marker": "vbt-version",
   "commitMessage": "chore: release v{{version}} [skip ci]",

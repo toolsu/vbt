@@ -1,6 +1,6 @@
 # `vbt`: Version Bump Tag
 
-Lightweight CLI to bump package version, replace version strings in marked files, and create git commits and tags.
+Lightweight CLI to bump version, replace version strings in marked files, and create git commits and tags. Works with any project — Node.js, Rust, Python, PHP, Dart, Deno, and more.
 
 [![npm package](https://img.shields.io/badge/npm%20i%20--g-vbt-blue)](https://www.npmjs.com/package/vbt) [![version number](https://img.shields.io/npm/v/vbt)](https://www.npmjs.com/package/vbt?activeTab=versions) [![Actions Status](https://github.com/toolsu/vbt/workflows/Test/badge.svg)](https://github.com/toolsu/vbt/actions) [![License](https://img.shields.io/badge/license-MIT-brightgreen)](https://github.com/toolsu/vbt/blob/main/LICENSE)<!-- vbt-version -->
 
@@ -55,7 +55,7 @@ TOML:
 version = "1.0.0" # vbt-version
 ```
 
-Only the **old version** (read from `package.json`) on marked lines is replaced. Unmarked lines and other version-like strings are never touched.
+Only the **old version** (read from the manifest file) on marked lines is replaced. Unmarked lines and other version-like strings are never touched.
 
 ### Offset syntax
 
@@ -84,23 +84,23 @@ Create `vbt.config.json` in your project root, or add a `"vbt"` key to `package.
 
 ```json
 {
-  "files": ["src/version.ts", "README.md"],
+  "manifest": "Cargo.toml",
+  "files": ["src/version.rs", "README.md"],
   "push": true,
-  "preBumpCheck": "npm test",
-  "postBumpHook": "npm publish"
+  "preBumpCheck": "cargo test"
 }
 ```
 
 ### Path resolution
 
-All file paths (`packageJson`, `files`, `commitFiles`, config file paths) are resolved relative to the **project root** (the nearest ancestor directory containing `package.json`). This means vbt works correctly when invoked from a subdirectory.
+All file paths (`manifest`, `files`, `commitFiles`, config file paths) are resolved relative to the **project root** (the nearest ancestor directory containing `package.json` or `vbt.config.json`). This means vbt works correctly when invoked from a subdirectory.
 
 ### Execution order
 
 1. Check clean working directory (`requireCleanWorkingDirectory`)
 2. Run pre-bump check (`preBumpCheck`)
 3. Calculate new version
-4. Update `package.json` (`packageJson`)
+4. Update manifest file (`manifest`)
 5. Replace versions in marked files (`files` + `marker`)
 6. Git commit (`commitMessage`, `commitFiles`)
 7. Git tag (`tag`, `tagMessage`)
@@ -117,7 +117,7 @@ The flow is not fully transactional: if a step fails before commit, vbt attempts
 |--------|------|---------|-------------|
 | `requireCleanWorkingDirectory` | `boolean` | `true` | Require clean git working directory |
 | `preBumpCheck` | `string \| false` | `false` | Command to run before bumping |
-| `packageJson` | `string` | `"./package.json"` | Path to package.json (relative to project root) |
+| `manifest` | `string` | `"./package.json"` | Path to manifest file (see supported files above) |
 | `files` | `string[]` | `[]` | Files to scan for marker-based version replacement |
 | `marker` | `string` | `"vbt-version"` | Marker string to identify lines for replacement |
 | `commitMessage` | `string \| false` | `"chore: bump version to v{{version}}"` | Commit message template, or `false` to skip commit |
@@ -147,6 +147,27 @@ Unknown configuration keys and invalid types are rejected with an error.
 | `--version` | Show version number |
 
 Unknown flags and unexpected arguments are rejected with an error.
+
+## Supported Manifest Files
+
+| File | Ecosystem |
+|------|-----------|
+| `package.json` (default) | Node.js |
+| `composer.json` | PHP |
+| `deno.json` / `deno.jsonc` | Deno |
+| `jsr.json` / `jsr.jsonc` | JSR |
+| `Cargo.toml` | Rust |
+| `pyproject.toml` | Python (PEP 621 `[project]`) |
+| `pubspec.yaml` | Dart / Flutter |
+| `vbt.config.json` | Any (standalone) |
+
+For non-Node.js projects, create a `vbt.config.json` with the `manifest` option:
+
+```json
+{
+  "manifest": "Cargo.toml"
+}
+```
 
 ## License
 
