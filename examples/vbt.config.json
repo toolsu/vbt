@@ -1,0 +1,15 @@
+{
+  "requireCleanWorkingDirectory": true,
+  "preBumpCheck": false,
+  "packageJson": "./package.json",
+  "files": [],
+  "marker": "vbt-version",
+  "commitMessage": "chore: bump version to v{{version}}",
+  "commitFiles": [],
+  "tag": "v{{version}}",
+  "tagMessage": "chore: release v{{version}}",
+  "push": false,
+  "postBumpHook": false,
+  "verbose": false,
+  "dryRun": false
+}

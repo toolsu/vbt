@@ -1,0 +1,61 @@
+# Source files
+src/
+*.ts
+!*.d.ts
+
+# Configuration files
+tsconfig.json
+biome.json
+
+# Git files
+.git/
+.gitignore
+.gitattributes
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+azure-pipelines.yml
+
+# Documentation (keep README and LICENSE)
+docs/
+
+# Test files
+test/
+tests/
+*.test.js
+*.test.ts
+*.spec.js
+*.spec.ts
+coverage/
+.nyc_output/
+
+# Editor directories and files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Dependencies (will be installed by user)
+node_modules/
+
+# Build artifacts
+*.tsbuildinfo
+
+# Examples
+examples/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/

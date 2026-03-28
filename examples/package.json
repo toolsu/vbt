@@ -1,0 +1,24 @@
+{
+  "name": "example-project",
+  "version": "1.0.0",
+  "description": "Example project using vbt",
+  "scripts": {
+    "vbt": "vbt",
+    "vbt:patch": "vbt patch",
+    "vbt:minor": "vbt minor",
+    "vbt:major": "vbt major",
+    "vbt:alpha": "vbt prerelease alpha",
+    "vbt:beta": "vbt prerelease beta",
+    "vbt:rc": "vbt prepatch rc",
+    "vbt:dry": "vbt patch --dry-run"
+  },
+  "devDependencies": {
+    "vbt": "^0.1.0"
+  },
+  "vbt": {
+    "commitMessage": "chore: bump version to v{{version}}",
+    "push": false,
+    "runPreBumpChecks": true,
+    "preBumpCheckCommand": "npm test"
+  }
+}
