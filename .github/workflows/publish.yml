@@ -22,6 +22,14 @@ jobs:
       - run: npm run build
       - run: npm run check
       - run: npm run test:coverage
-      - run: npm publish --provenance --access public
+      - name: Publish
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [[ "$VERSION" == *-* ]]; then
+            TAG=$(echo "$VERSION" | sed 's/.*-\([a-zA-Z]*\).*/\1/')
+            npm publish --provenance --access public --tag "$TAG"
+          else
+            npm publish --provenance --access public
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
