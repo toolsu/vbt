@@ -10,7 +10,7 @@
     "semver",
     "cli",
     "release",
-    "versioning",
+    "replace",
     "package-json"
   ],
   "homepage": "https://github.com/toolsu/vbt#readme",
