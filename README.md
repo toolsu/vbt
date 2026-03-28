@@ -2,7 +2,7 @@
 
 A CLI tool to bump versions in `package.json` and any marked files, create git tags, and commit changes.
 
-[![npm package](https://img.shields.io/badge/npm%20i%20--g-vbt-blue)](https://www.npmjs.com/package/vbt) [![version number](https://img.shields.io/badge/version-v0.1.0-orange)](https://www.npmjs.com/package/vbt?activeTab=versions) [![Actions Status](https://github.com/toolsu/vbt/workflows/Test/badge.svg)](https://github.com/toolsu/vbt/actions) [![License](https://img.shields.io/badge/license-MIT-brightgreen)](https://github.com/toolsu/vbt/blob/main/LICENSE)<!-- vbt-version -->
+[![npm package](https://img.shields.io/badge/npm%20i%20--g-vbt-blue)](https://www.npmjs.com/package/vbt) [![version number](https://img.shields.io/badge/version-v1.0.0-beta.1-orange)](https://www.npmjs.com/package/vbt?activeTab=versions) [![Actions Status](https://github.com/toolsu/vbt/workflows/Test/badge.svg)](https://github.com/toolsu/vbt/actions) [![License](https://img.shields.io/badge/license-MIT-brightgreen)](https://github.com/toolsu/vbt/blob/main/LICENSE)<!-- vbt-version -->
 
 ## Install
 
@@ -40,19 +40,19 @@ Mark lines in any file with `vbt-version` (or a custom marker via the `marker` c
 
 JavaScript / TypeScript:
 ```js
-const VERSION = "0.1.0"; // vbt-version
+const VERSION = "1.0.0-beta.1"; // vbt-version
 ```
 
 Markdown / HTML:
 
 ```markdown
-Current version: 0.1.0 <!-- vbt-version -->
+Current version: 1.0.0-beta.1 <!-- vbt-version -->
 ```
 
 TOML:
 
 ```toml
-version = "0.1.0" # vbt-version
+version = "1.0.0-beta.1" # vbt-version
 ```
 
 Only the **old version** (read from `package.json`) on marked lines is replaced. Unmarked lines and other version-like strings are never touched.
@@ -64,7 +64,7 @@ Use `+N` to replace the version N lines below the marker. This is useful for cod
 ````markdown
 <!-- vbt-version +2 -->
 ```bash
-npm i -g vbt@0.1.0
+npm i -g vbt@1.0.0-beta.1
 ```
 ````
 
