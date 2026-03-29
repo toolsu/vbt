@@ -5,7 +5,7 @@ import { basename, resolve } from 'node:path'
 import { inc, valid } from 'semver-ts'
 import { findProjectRoot, loadConfig, validateConfig } from './config.js'
 import { getManifestHandler } from './manifest.js'
-import { RELEASE_TYPES, type ReleaseType } from './types.js'
+import { RELEASE_TYPES, type FileEntry, type ReleaseType } from './types.js'
 
 const require = createRequire(import.meta.url)
 const { version: VERSION } = require('../package.json') as { version: string }
@@ -158,11 +158,73 @@ interface FileUpdate {
 }
 
 /**
+ * Navigate a dot-notation path in an object and return the parent object and final key.
+ * Throws if any intermediate segment is missing or not an object.
+ */
+function resolveJsonPath(
+  obj: unknown,
+  dotPath: string,
+  filePath: string,
+): { parent: Record<string, unknown>; key: string } {
+  const keys = dotPath.split('.')
+  let current: unknown = obj
+  for (let i = 0; i < keys.length - 1; i++) {
+    if (typeof current !== 'object' || current === null || !(keys[i] in current)) {
+      throw new Error(
+        `jsonPath '${dotPath}' not found in ${filePath} (segment '${keys[i]}' missing)`,
+      )
+    }
+    current = (current as Record<string, unknown>)[keys[i]]
+  }
+  const lastKey = keys[keys.length - 1]
+  if (typeof current !== 'object' || current === null || !(lastKey in current)) {
+    throw new Error(`jsonPath '${dotPath}' not found in ${filePath}`)
+  }
+  return { parent: current as Record<string, unknown>, key: lastKey }
+}
+
+/**
+ * Compute version replacement for a JSON file entry using jsonPath.
+ */
+function computeJsonPathUpdate(
+  entry: { path: string; jsonPath: string },
+  newVersion: string,
+  baseDir: string,
+): FileUpdate | null {
+  const filePath = entry.path
+  const absolutePath = resolve(baseDir, filePath)
+  if (!existsSync(absolutePath)) {
+    console.warn(`Warning: File not found: ${filePath}`)
+    return null
+  }
+
+  const content = readFileSync(absolutePath, 'utf8')
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(content)
+  } catch {
+    throw new Error(`Failed to parse ${filePath} as JSON`)
+  }
+
+  const { parent, key } = resolveJsonPath(parsed, entry.jsonPath, filePath)
+  if (typeof parent[key] !== 'string') {
+    throw new Error(
+      `jsonPath '${entry.jsonPath}' in ${filePath} is not a string (got ${typeof parent[key]})`,
+    )
+  }
+
+  parent[key] = newVersion
+  const newContent = `${JSON.stringify(parsed, null, 2)}\n`
+  if (newContent === content) return null
+  return { filePath, absolutePath, content: newContent, originalContent: content }
+}
+
+/**
  * Compute version replacements for marked files without writing anything.
  * Returns the list of updates to apply and the relative paths of modified files.
  */
 export function computeFileUpdates(
-  files: string[],
+  files: FileEntry[],
   marker: string,
   oldVersion: string,
   newVersion: string,
@@ -171,7 +233,19 @@ export function computeFileUpdates(
   const updates: FileUpdate[] = []
   const modifiedFiles: string[] = []
 
-  for (const filePath of files) {
+  for (const entry of files) {
+    // Object entry with jsonPath: JSON path-based replacement
+    if (typeof entry === 'object') {
+      const update = computeJsonPathUpdate(entry, newVersion, baseDir)
+      if (update) {
+        updates.push(update)
+        modifiedFiles.push(entry.path)
+      }
+      continue
+    }
+
+    // String entry: marker-based replacement
+    const filePath = entry
     const absolutePath = resolve(baseDir, filePath)
     if (!existsSync(absolutePath)) {
       console.warn(`Warning: File not found: ${filePath}`)

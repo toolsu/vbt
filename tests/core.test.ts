@@ -457,6 +457,156 @@ describe('computeFileUpdates', () => {
 
     expect(mockExistsSync).toHaveBeenCalledWith('/my/project/src/version.ts')
   })
+
+  it('replaces version at jsonPath in JSON file', () => {
+    mockExistsSync.mockReturnValue(true)
+    mockReadFileSync.mockReturnValue(
+      `${JSON.stringify({ name: 'pkg', version: '1.0.0' }, null, 2)}\n`,
+    )
+
+    const { updates, modifiedFiles } = computeFileUpdates(
+      [{ path: 'package.json', jsonPath: 'version' }],
+      'vbt-version',
+      '1.0.0',
+      '2.0.0',
+      '/fake/project',
+    )
+
+    expect(modifiedFiles).toEqual(['package.json'])
+    expect(updates).toHaveLength(1)
+    const parsed = JSON.parse(updates[0].content)
+    expect(parsed.version).toBe('2.0.0')
+    expect(parsed.name).toBe('pkg')
+  })
+
+  it('replaces version at nested jsonPath', () => {
+    mockExistsSync.mockReturnValue(true)
+    const json = { metadata: { app: { version: '1.0.0' } }, other: 'value' }
+    mockReadFileSync.mockReturnValue(`${JSON.stringify(json, null, 2)}\n`)
+
+    const { updates, modifiedFiles } = computeFileUpdates(
+      [{ path: 'config.json', jsonPath: 'metadata.app.version' }],
+      'vbt-version',
+      '1.0.0',
+      '2.0.0',
+      '/fake/project',
+    )
+
+    expect(modifiedFiles).toEqual(['config.json'])
+    const parsed = JSON.parse(updates[0].content)
+    expect(parsed.metadata.app.version).toBe('2.0.0')
+    expect(parsed.other).toBe('value')
+  })
+
+  it('handles mixed string and jsonPath entries', () => {
+    mockExistsSync.mockReturnValue(true)
+    mockReadFileSync.mockImplementation((p) => {
+      if (String(p).includes('README.md')) return 'version 1.0.0 // vbt-version\n'
+      if (String(p).includes('package.json'))
+        return `${JSON.stringify({ version: '1.0.0' }, null, 2)}\n`
+      return ''
+    })
+
+    const { modifiedFiles } = computeFileUpdates(
+      ['README.md', { path: 'package.json', jsonPath: 'version' }],
+      'vbt-version',
+      '1.0.0',
+      '2.0.0',
+      '/fake/project',
+    )
+
+    expect(modifiedFiles).toEqual(['README.md', 'package.json'])
+  })
+
+  it('throws on invalid JSON in jsonPath entry', () => {
+    mockExistsSync.mockReturnValue(true)
+    mockReadFileSync.mockReturnValue('not json{')
+
+    expect(() =>
+      computeFileUpdates(
+        [{ path: 'bad.json', jsonPath: 'version' }],
+        'vbt-version',
+        '1.0.0',
+        '2.0.0',
+        '/fake/project',
+      ),
+    ).toThrow('Failed to parse bad.json as JSON')
+  })
+
+  it('throws when jsonPath not found', () => {
+    mockExistsSync.mockReturnValue(true)
+    mockReadFileSync.mockReturnValue(`${JSON.stringify({ name: 'pkg' }, null, 2)}\n`)
+
+    expect(() =>
+      computeFileUpdates(
+        [{ path: 'package.json', jsonPath: 'version' }],
+        'vbt-version',
+        '1.0.0',
+        '2.0.0',
+        '/fake/project',
+      ),
+    ).toThrow("jsonPath 'version' not found in package.json")
+  })
+
+  it('throws when jsonPath resolves to non-string', () => {
+    mockExistsSync.mockReturnValue(true)
+    mockReadFileSync.mockReturnValue(`${JSON.stringify({ version: 123 }, null, 2)}\n`)
+
+    expect(() =>
+      computeFileUpdates(
+        [{ path: 'package.json', jsonPath: 'version' }],
+        'vbt-version',
+        '1.0.0',
+        '2.0.0',
+        '/fake/project',
+      ),
+    ).toThrow("jsonPath 'version' in package.json is not a string")
+  })
+
+  it('warns on missing file for jsonPath entry', () => {
+    mockExistsSync.mockReturnValue(false)
+
+    const { modifiedFiles } = computeFileUpdates(
+      [{ path: 'missing.json', jsonPath: 'version' }],
+      'vbt-version',
+      '1.0.0',
+      '2.0.0',
+      '/fake/project',
+    )
+
+    expect(modifiedFiles).toEqual([])
+    expect(vi.mocked(console.warn)).toHaveBeenCalledWith(expect.stringContaining('File not found'))
+  })
+
+  it('skips jsonPath entry when version already matches', () => {
+    mockExistsSync.mockReturnValue(true)
+    mockReadFileSync.mockReturnValue(`${JSON.stringify({ version: '2.0.0' }, null, 2)}\n`)
+
+    const { modifiedFiles } = computeFileUpdates(
+      [{ path: 'package.json', jsonPath: 'version' }],
+      'vbt-version',
+      '1.0.0',
+      '2.0.0',
+      '/fake/project',
+    )
+
+    expect(modifiedFiles).toEqual([])
+  })
+
+  it('throws when intermediate jsonPath segment is missing', () => {
+    mockExistsSync.mockReturnValue(true)
+    mockReadFileSync.mockReturnValue(`${JSON.stringify({ name: 'pkg' }, null, 2)}\n`)
+
+    expect(() =>
+      computeFileUpdates(
+        [{ path: 'config.json', jsonPath: 'metadata.app.version' }],
+        'vbt-version',
+        '1.0.0',
+        '2.0.0',
+        '/fake/project',
+      ),
+    ).toThrow("segment 'metadata' missing")
+  })
 })
 
 describe('applyFileUpdates', () => {

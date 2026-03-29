@@ -14,6 +14,20 @@ export const RELEASE_TYPES = [
 export type ReleaseType = (typeof RELEASE_TYPES)[number]
 
 /**
+ * A file entry for version replacement.
+ * - string: marker-based replacement (scan for marker comments)
+ * - object with jsonPath: JSON path-based replacement (dot-notation path to version value)
+ */
+export type FileEntry =
+  | string
+  | {
+      /** File path relative to project root */
+      path: string
+      /** Dot-notation path to the version value in the JSON file (e.g. "version", "metadata.app.version") */
+      jsonPath: string
+    }
+
+/**
  * Configuration options for vbt
  */
 export interface Config {
@@ -43,11 +57,12 @@ export interface Config {
   packageJson?: string
 
   /**
-   * File paths to scan for marker-based version replacement.
-   * Lines containing the marker string will have the old version replaced with the new version.
+   * Files for version replacement. Each entry can be:
+   * - A string: scan file for marker comments (existing behavior)
+   * - An object with `path` and `jsonPath`: replace version at a JSON dot-notation path
    * @default []
    */
-  files?: string[]
+  files?: FileEntry[]
 
   /**
    * Marker string to identify lines for version replacement.

@@ -1,6 +1,6 @@
 # `vbt`: Version Bump Tag
 
-Lightweight CLI to bump version, replace version strings in marked files, and create git commits and tags. Works with any project — Node.js, Rust, Python, PHP, Dart, Deno, and more.
+Lightweight CLI to bump version, replace version strings in marked files, and create git commits and tags. Works with any project: Node.js, Rust, Python, PHP, Dart, Deno, and more.
 
 [![npm package](https://img.shields.io/badge/npm%20i%20--g-vbt-blue)](https://www.npmjs.com/package/vbt) [![version number](https://img.shields.io/npm/v/vbt)](https://www.npmjs.com/package/vbt?activeTab=versions) [![Actions Status](https://github.com/toolsu/vbt/workflows/Test/badge.svg)](https://github.com/toolsu/vbt/actions) [![License](https://img.shields.io/badge/license-MIT-brightgreen)](https://github.com/toolsu/vbt/blob/main/LICENSE)
 
@@ -36,7 +36,13 @@ vbt patch --config x.json # Use custom config file
 
 ## File Version Replacement
 
-The manifest file is updated automatically — you don't need to add it to `files` or mark it with a comment. For **additional** files, mark lines with `vbt-version` (or a custom marker via the `marker` config option) to have their version updated:
+### Manifest File
+
+The manifest file is updated automatically, you don't need to add it to `files` or mark it with a comment.
+
+### Marker
+
+For **additional** files, mark lines with `vbt-version` (or a custom marker via the `marker` config option) to have their version updated:
 
 JavaScript / TypeScript:
 ```js
@@ -57,7 +63,7 @@ version = "1.3.0" # vbt-version
 
 Only the **old version** (read from the manifest file) on marked lines is replaced. Unmarked lines and other version-like strings are never touched.
 
-### Offset syntax
+#### Offset syntax
 
 Use `+N` to replace the version N lines below the marker. This is useful for code blocks in markdown, where inline comments would be visible:
 
@@ -77,6 +83,24 @@ The HTML comment is invisible in rendered markdown, and the version inside the c
   "files": ["src/version.ts", "README.md"]
 }
 ```
+
+#### JSON path replacement
+
+For JSON files (where comments aren't supported), use object entries with `jsonPath` to specify a dot-notation path to the version value:
+
+```json
+{
+  manifest: "./Cargo.toml",
+  files: [
+    "README.md",                                                // marker-based
+    { path: "package.json", jsonPath: "version" },              // top-level key
+    { path: "src-tauri/tauri.conf.json", jsonPath: "version" }, // top-level key
+    { path: "config.json", jsonPath: "metadata.app.version" }   // nested path
+  ]
+}
+```
+
+The file is parsed as JSON, the value at the dot-notation path is replaced with the new version, and the file is written back with 2-space indentation. The target value must be a string.
 
 ## Configuration
 
@@ -121,7 +145,7 @@ The flow is not fully transactional: if a step fails before commit, vbt attempts
 | `requireCleanWorkingDirectory` | `boolean` | `true` | Require clean git working directory |
 | `preBumpCheck` | `string \| false` | `false` | (Hook) Command to run before bumping |
 | `manifest` | `string` | `"./package.json"` | Path to manifest file (see [supported files](#supported-manifest-files)) |
-| `files` | `string[]` | `[]` | Files to scan for marker-based version replacement |
+| `files` | `(string \| {path, jsonPath})[]` | `[]` | Files for version replacement (strings: marker-based, objects: JSON path) |
 | `marker` | `string` | `"vbt-version"` | Marker string to identify lines for replacement |
 | `commitMessage` | `string \| false` | `"chore: bump version to v{{version}}"` | Commit message template, or `false` to skip commit |
 | `commitFiles` | `string[]` | `[]` | Additional files to stage for commit |

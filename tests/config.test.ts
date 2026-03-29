@@ -464,14 +464,30 @@ describe('validateConfig', () => {
     expect(() => validateConfig(config)).toThrow('"manifest" must be a string')
   })
 
-  it('throws when files is not string array', () => {
+  it('throws when files is not an array', () => {
     const config = makeInvalidConfig({ files: 'README.md' })
-    expect(() => validateConfig(config)).toThrow('"files" must be an array of strings')
+    expect(() => validateConfig(config)).toThrow('"files" must be an array of file entries')
   })
 
-  it('throws when files contains non-string', () => {
+  it('throws when files contains invalid entry', () => {
     const config = makeInvalidConfig({ files: [1, 2] })
-    expect(() => validateConfig(config)).toThrow('"files" must be an array of strings')
+    expect(() => validateConfig(config)).toThrow(
+      '"files" entries must be strings or objects with {path, jsonPath}',
+    )
+  })
+
+  it('throws when files object entry missing jsonPath', () => {
+    const config = makeInvalidConfig({ files: [{ path: 'a.json' }] })
+    expect(() => validateConfig(config)).toThrow(
+      '"files" entries must be strings or objects with {path, jsonPath}',
+    )
+  })
+
+  it('accepts valid files with mixed string and object entries', () => {
+    const config = makeInvalidConfig({
+      files: ['README.md', { path: 'package.json', jsonPath: 'version' }],
+    })
+    expect(() => validateConfig(config)).not.toThrow()
   })
 
   it('throws when marker is not string', () => {

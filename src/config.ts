@@ -170,7 +170,7 @@ export async function loadConfig(
 function validateFieldType(
   key: string,
   value: unknown,
-  expected: 'boolean' | 'string' | 'string|false' | 'string[]',
+  expected: 'boolean' | 'string' | 'string|false' | 'string[]' | 'FileEntry[]',
 ): void {
   switch (expected) {
     case 'boolean':
@@ -197,6 +197,27 @@ function validateFieldType(
         )
       }
       break
+    case 'FileEntry[]':
+      if (!Array.isArray(value)) {
+        throw new Error(
+          `Config error: "${key}" must be an array of file entries (got ${JSON.stringify(value)})`,
+        )
+      }
+      for (const entry of value) {
+        if (typeof entry === 'string') continue
+        if (
+          typeof entry === 'object' &&
+          entry !== null &&
+          typeof (entry as Record<string, unknown>).path === 'string' &&
+          typeof (entry as Record<string, unknown>).jsonPath === 'string'
+        ) {
+          continue
+        }
+        throw new Error(
+          `Config error: "${key}" entries must be strings or objects with {path, jsonPath} (got ${JSON.stringify(entry)})`,
+        )
+      }
+      break
   }
 }
 
@@ -217,7 +238,7 @@ export function validateConfig(config: ResolvedConfig): void {
   validateFieldType('requireCleanWorkingDirectory', config.requireCleanWorkingDirectory, 'boolean')
   validateFieldType('preBumpCheck', config.preBumpCheck, 'string|false')
   validateFieldType('manifest', config.manifest, 'string')
-  validateFieldType('files', config.files, 'string[]')
+  validateFieldType('files', config.files, 'FileEntry[]')
   validateFieldType('marker', config.marker, 'string')
   validateFieldType('commitMessage', config.commitMessage, 'string|false')
   validateFieldType('commitFiles', config.commitFiles, 'string[]')
