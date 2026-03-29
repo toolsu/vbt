@@ -97,15 +97,16 @@ All file paths (`manifest`, `files`, `commitFiles`, config file paths) are resol
 ### Execution order
 
 1. Check clean working directory (`requireCleanWorkingDirectory`)
-2. Run pre-bump check (`preBumpCheck`)
+2. Run pre-bump check hook (`preBumpCheck`)
 3. Calculate new version
 4. Update manifest file (`manifest`)
 5. Replace versions in marked files (`files` + `marker`)
 6. Sync lockfile (auto, see below)
-7. Git commit (`commitMessage`, `commitFiles`)
-8. Git tag (`tag`, `tagMessage`)
-9. Git push (`push`)
-10. Run post-bump hook (`postBumpHook`)
+7. Run post-version-replacement hook (`postVerRepl`)
+8. Git commit (`commitMessage`, `commitFiles`)
+9. Git tag (`tag`, `tagMessage`)
+10. Git push (`push`)
+11. Run post-bump hook (`postBumpHook`)
 
 **Automatic lockfile sync:** When the manifest is `Cargo.toml` and a `Cargo.lock` file exists in the project root, vbt automatically runs `cargo generate-lockfile` to keep `Cargo.lock` in sync after the version bump. The updated `Cargo.lock` is included in the commit. Projects without `Cargo.lock` (e.g., libraries that don't track it) are not affected.
 
@@ -118,7 +119,7 @@ The flow is not fully transactional: if a step fails before commit, vbt attempts
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `requireCleanWorkingDirectory` | `boolean` | `true` | Require clean git working directory |
-| `preBumpCheck` | `string \| false` | `false` | Command to run before bumping |
+| `preBumpCheck` | `string \| false` | `false` | (Hook) Command to run before bumping |
 | `manifest` | `string` | `"./package.json"` | Path to manifest file (see [supported files](#supported-manifest-files)) |
 | `files` | `string[]` | `[]` | Files to scan for marker-based version replacement |
 | `marker` | `string` | `"vbt-version"` | Marker string to identify lines for replacement |
@@ -127,11 +128,12 @@ The flow is not fully transactional: if a step fails before commit, vbt attempts
 | `tag` | `string \| false` | `"v{{version}}"` | Tag name template, or `false` to skip tag |
 | `tagMessage` | `string \| false` | `"chore: release v{{version}}"` | Annotated tag message, or `false` for lightweight tag |
 | `push` | `boolean` | `false` | Push commits and tags to origin |
-| `postBumpHook` | `string \| false` | `false` | Command to run after bumping |
+| `postVerRepl` | `string \| false` | `false` | (Hook) Command to run after version replacement, before commit |
+| `postBumpHook` | `string \| false` | `false` | (Hook) Command to run after bumping |
 | `verbose` | `boolean` | `false` | Show verbose output |
 | `dryRun` | `boolean` | `false` | Dry run without making changes |
 
-Use `{{version}}` in `commitMessage`, `tag`, and `tagMessage` templates. `{{oldVersion}}` is also available for the previous version.
+Use `{{version}}` in `commitMessage`, `tag`, `tagMessage`, and `postVerRepl` templates. `{{oldVersion}}` is also available for the previous version.
 
 Unknown configuration keys and invalid types are rejected with an error.
 

@@ -86,6 +86,15 @@ export interface Config {
   push?: boolean
 
   /**
+   * Command to run after version replacement but before git commit.
+   * Useful for formatting, generating files, or syncing lockfiles that need to be included in the commit.
+   * Supports {{version}} and {{oldVersion}} template placeholders.
+   * false to skip.
+   * @default false
+   */
+  postVerRepl?: string | false
+
+  /**
    * Command to run after bumping (e.g., "npm publish"). false to skip.
    * @default false
    */
@@ -118,6 +127,7 @@ export const DEFAULT_CONFIG: Required<Omit<Config, 'packageJson'>> = {
   tag: 'v{{version}}',
   tagMessage: 'chore: release v{{version}}',
   push: false,
+  postVerRepl: false,
   postBumpHook: false,
   verbose: false,
   dryRun: false,

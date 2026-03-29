@@ -454,6 +454,16 @@ export async function run(args: string[]): Promise<void> {
       }
     }
 
+    // Run post-version-replacement hook
+    if (config.postVerRepl) {
+      const cmd = replaceTemplate(config.postVerRepl as string, newVersion, oldVersion)
+      console.log('Running post-version-replacement hook...')
+      execShell(cmd, 'Post-version-replacement hook', dryRun, verbose, projectRoot)
+      if (!dryRun) {
+        console.log('✓ Ran post-version-replacement hook')
+      }
+    }
+
     // Git commit
     if (config.commitMessage) {
       const commitMessage = replaceTemplate(config.commitMessage as string, newVersion, oldVersion)

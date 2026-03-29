@@ -871,6 +871,95 @@ describe('run', () => {
     expect(mockExecSync).not.toHaveBeenCalled()
   })
 
+  it('runs postVerRepl hook after file updates', async () => {
+    setupMocks({ postVerRepl: 'npm run format' })
+    await run(['patch'])
+
+    expect(mockExecSync).toHaveBeenCalledWith('npm run format', expect.anything())
+  })
+
+  it('does not run postVerRepl when false', async () => {
+    setupMocks({ postVerRepl: false })
+    await run(['patch'])
+
+    expect(mockExecSync).not.toHaveBeenCalled()
+  })
+
+  it('replaces {{version}} and {{oldVersion}} in postVerRepl command', async () => {
+    setupMocks({ postVerRepl: 'echo {{oldVersion}} to {{version}}' })
+    await run(['patch'])
+
+    expect(mockExecSync).toHaveBeenCalledWith('echo 1.0.0 to 1.0.1', expect.anything())
+  })
+
+  it('runs postVerRepl before git commit', async () => {
+    const callOrder: string[] = []
+    setupMocks({ postVerRepl: 'npm run format' })
+
+    mockExecSync.mockImplementation((cmd) => {
+      callOrder.push(`shell:${cmd}`)
+      return Buffer.from('')
+    })
+    mockExecFileSync.mockImplementation((_file, args) => {
+      const a = args as string[]
+      if (a[0] === 'rev-parse') throw new Error('fatal: not a valid object name')
+      if (a[0] === 'commit') callOrder.push('git:commit')
+      return Buffer.from('')
+    })
+
+    await run(['patch'])
+
+    const shellIdx = callOrder.indexOf('shell:npm run format')
+    const commitIdx = callOrder.indexOf('git:commit')
+    expect(shellIdx).toBeGreaterThanOrEqual(0)
+    expect(commitIdx).toBeGreaterThan(shellIdx)
+  })
+
+  it('rolls back files when postVerRepl fails', async () => {
+    const originalContent = '{\n  "name": "test",\n  "version": "1.0.0"\n}\n'
+    setupMocks({ postVerRepl: 'failing-cmd' })
+    mockReadFileSync.mockReturnValue(originalContent)
+    mockExecSync.mockImplementation((cmd) => {
+      if (cmd === 'failing-cmd') throw new Error('hook failed')
+      return Buffer.from('')
+    })
+
+    await expect(run(['patch'])).rejects.toThrow('hook failed')
+
+    const writeCalls = mockWriteFileSync.mock.calls
+    const lastWrite = writeCalls[writeCalls.length - 1]
+    expect(lastWrite[1]).toBe(originalContent)
+    expect(vi.mocked(console.error)).toHaveBeenCalledWith('Rolled back file changes due to error.')
+  })
+
+  it('dry run with postVerRepl does not log hook success', async () => {
+    setupMocks({ postVerRepl: 'npm run format', dryRun: true })
+    await run(['patch'])
+
+    const logCalls = vi.mocked(console.log).mock.calls.map((c) => String(c[0]))
+    expect(logCalls).not.toContainEqual(
+      expect.stringContaining('Ran post-version-replacement hook'),
+    )
+  })
+
+  it('logs postVerRepl running message', async () => {
+    setupMocks({ postVerRepl: 'npm run format' })
+    await run(['patch'])
+
+    expect(vi.mocked(console.log)).toHaveBeenCalledWith('Running post-version-replacement hook...')
+    expect(vi.mocked(console.log)).toHaveBeenCalledWith('✓ Ran post-version-replacement hook')
+  })
+
+  it('passes projectRoot as cwd to postVerRepl', async () => {
+    setupMocks({ postVerRepl: 'npm run format' })
+    await run(['patch'])
+
+    expect(mockExecSync).toHaveBeenCalledWith(
+      'npm run format',
+      expect.objectContaining({ cwd: '/fake/project' }),
+    )
+  })
+
   it('preserves final newline', async () => {
     setupMocks()
     await run(['patch'])

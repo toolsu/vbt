@@ -9,6 +9,7 @@
   "tag": "v{{version}}",
   "tagMessage": "Release v{{version}}\n\nSee CHANGELOG.md for details.",
   "push": true,
+  "postVerRepl": "npm run format",
   "postBumpHook": "npm run build && npm publish",
   "verbose": true,
   "dryRun": false

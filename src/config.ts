@@ -224,6 +224,7 @@ export function validateConfig(config: ResolvedConfig): void {
   validateFieldType('tag', config.tag, 'string|false')
   validateFieldType('tagMessage', config.tagMessage, 'string|false')
   validateFieldType('push', config.push, 'boolean')
+  validateFieldType('postVerRepl', config.postVerRepl, 'string|false')
   validateFieldType('postBumpHook', config.postBumpHook, 'string|false')
   validateFieldType('verbose', config.verbose, 'boolean')
   validateFieldType('dryRun', config.dryRun, 'boolean')

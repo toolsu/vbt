@@ -504,6 +504,11 @@ describe('validateConfig', () => {
     expect(() => validateConfig(config)).toThrow('"push" must be a boolean')
   })
 
+  it('throws when postVerRepl is not string or false', () => {
+    const config = makeInvalidConfig({ postVerRepl: 42 })
+    expect(() => validateConfig(config)).toThrow('"postVerRepl" must be a string or false')
+  })
+
   it('throws when postBumpHook is not string or false', () => {
     const config = makeInvalidConfig({ postBumpHook: {} })
     expect(() => validateConfig(config)).toThrow('"postBumpHook" must be a string or false')
