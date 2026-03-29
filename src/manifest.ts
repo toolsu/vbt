@@ -296,6 +296,26 @@ class YamlManifestHandler implements ManifestHandler {
 }
 
 /**
+ * Cargo.toml handler with workspace fallback.
+ * Tries [package].version first, then [workspace.package].version.
+ */
+class CargoTomlManifestHandler implements ManifestHandler {
+  private readonly packageHandler = new TomlManifestHandler('package')
+  private readonly workspaceHandler = new TomlManifestHandler('workspace.package')
+
+  readVersion(content: string): string | null {
+    return this.packageHandler.readVersion(content) ?? this.workspaceHandler.readVersion(content)
+  }
+
+  writeVersion(content: string, oldVersion: string, newVersion: string): string {
+    if (this.packageHandler.readVersion(content) !== null) {
+      return this.packageHandler.writeVersion(content, oldVersion, newVersion)
+    }
+    return this.workspaceHandler.writeVersion(content, oldVersion, newVersion)
+  }
+}
+
+/**
  * Supported manifest filenames mapped to their format
  */
 const SUPPORTED_MANIFESTS: Record<string, 'json' | 'jsonc' | 'toml' | 'yaml'> = {
@@ -331,10 +351,9 @@ export function getManifestHandler(filename: string): ManifestHandler {
       return new JsonManifestHandler()
     case 'jsonc':
       return new JsoncManifestHandler()
-    case 'toml': {
-      const section = base === 'pyproject.toml' ? 'project' : 'package'
-      return new TomlManifestHandler(section)
-    }
+    case 'toml':
+      if (base === 'Cargo.toml') return new CargoTomlManifestHandler()
+      return new TomlManifestHandler('project')
     case 'yaml':
       return new YamlManifestHandler()
   }

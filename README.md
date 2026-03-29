@@ -184,7 +184,7 @@ Unknown flags and unexpected arguments are rejected with an error.
 | `composer.json` | PHP |
 | `deno.json` / `deno.jsonc` | Deno |
 | `jsr.json` / `jsr.jsonc` | JSR |
-| `Cargo.toml` | Rust |
+| `Cargo.toml` | Rust (supports `[package]` and `[workspace.package]`) |
 | `pyproject.toml` | Python (PEP 621 `[project]`) |
 | `pubspec.yaml` | Dart / Flutter |
 | `vbt.config.json` | Any (standalone) |

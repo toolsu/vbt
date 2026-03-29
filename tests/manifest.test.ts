@@ -202,6 +202,23 @@ describe('TomlManifestHandler', () => {
         const content = '[package]\nname = "my-crate"\n'
         expect(handler.readVersion(content)).toBeNull()
       })
+
+      it('reads version from [workspace.package] when no [package].version', () => {
+        const content =
+          '[workspace]\nmembers = ["crates/foo"]\n\n[workspace.package]\nversion = "3.0.0"\nedition = "2021"\n'
+        expect(handler.readVersion(content)).toBe('3.0.0')
+      })
+
+      it('prefers [package].version over [workspace.package].version', () => {
+        const content =
+          '[workspace.package]\nversion = "1.0.0"\n\n[package]\nname = "my-crate"\nversion = "2.0.0"\n'
+        expect(handler.readVersion(content)).toBe('2.0.0')
+      })
+
+      it('returns null when neither [package] nor [workspace.package] has version', () => {
+        const content = '[workspace]\nmembers = ["crates/foo"]\n'
+        expect(handler.readVersion(content)).toBeNull()
+      })
     })
 
     describe('writeVersion', () => {
@@ -231,6 +248,23 @@ describe('TomlManifestHandler', () => {
         const content = "[package]\nversion = '1.0.0'\n"
         const result = handler.writeVersion(content, '1.0.0', '2.0.0')
         expect(result).toBe("[package]\nversion = '2.0.0'\n")
+      })
+
+      it('writes version in [workspace.package] when no [package].version', () => {
+        const content =
+          '[workspace]\nmembers = ["crates/foo"]\n\n[workspace.package]\nversion = "1.0.0"\nedition = "2021"\n'
+        const result = handler.writeVersion(content, '1.0.0', '2.0.0')
+        expect(result).toBe(
+          '[workspace]\nmembers = ["crates/foo"]\n\n[workspace.package]\nversion = "2.0.0"\nedition = "2021"\n',
+        )
+      })
+
+      it('writes version in [package] when both sections exist', () => {
+        const content =
+          '[workspace.package]\nversion = "1.0.0"\n\n[package]\nname = "my-crate"\nversion = "1.0.0"\n'
+        const result = handler.writeVersion(content, '1.0.0', '2.0.0')
+        expect(result).toContain('[workspace.package]\nversion = "1.0.0"')
+        expect(result).toContain('[package]\nname = "my-crate"\nversion = "2.0.0"')
       })
     })
   })
