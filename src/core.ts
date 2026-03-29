@@ -1,7 +1,7 @@
 import { execFileSync, execSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { resolve } from 'node:path'
+import { basename, resolve } from 'node:path'
 import { inc, valid } from 'semver-ts'
 import { findProjectRoot, loadConfig, validateConfig } from './config.js'
 import { getManifestHandler } from './manifest.js'
@@ -422,6 +422,16 @@ export async function run(args: string[]): Promise<void> {
 
   // ── Phase 1: Write files + git commit (rollback on failure) ──
 
+  // Detect Cargo.lock for automatic lockfile sync
+  const manifestBase = basename(config.manifest)
+  const cargoLockPath = resolve(projectRoot, 'Cargo.lock')
+  const syncCargoLock = manifestBase === 'Cargo.toml' && existsSync(cargoLockPath)
+  let originalCargoLock: string | null = null
+
+  if (syncCargoLock) {
+    originalCargoLock = readFileSync(cargoLockPath, 'utf8')
+  }
+
   let createdTagName = ''
 
   try {
@@ -436,10 +446,22 @@ export async function run(args: string[]): Promise<void> {
     // Write marked files
     applyFileUpdates(fileUpdates, dryRun, verbose)
 
+    // Sync Cargo.lock after Cargo.toml update
+    if (syncCargoLock) {
+      execShell('cargo generate-lockfile', 'Sync Cargo.lock', dryRun, verbose, projectRoot)
+      if (!dryRun) {
+        console.log('✓ Synced Cargo.lock')
+      }
+    }
+
     // Git commit
     if (config.commitMessage) {
       const commitMessage = replaceTemplate(config.commitMessage as string, newVersion, oldVersion)
       const filesToCommit = [config.manifest, ...modifiedFiles, ...config.commitFiles]
+
+      if (syncCargoLock) {
+        filesToCommit.push('Cargo.lock')
+      }
 
       for (const file of filesToCommit) {
         execGit(['add', file], `Stage ${file}`, dryRun, verbose, projectRoot)
@@ -466,6 +488,13 @@ export async function run(args: string[]): Promise<void> {
     for (const { absolutePath, originalContent } of fileUpdates) {
       try {
         writeFileSync(absolutePath, originalContent, 'utf8')
+      } catch {
+        // Best-effort rollback
+      }
+    }
+    if (originalCargoLock !== null) {
+      try {
+        writeFileSync(cargoLockPath, originalCargoLock, 'utf8')
       } catch {
         // Best-effort rollback
       }

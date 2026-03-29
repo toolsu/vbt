@@ -2,7 +2,7 @@
 
 Lightweight CLI to bump version, replace version strings in marked files, and create git commits and tags. Works with any project — Node.js, Rust, Python, PHP, Dart, Deno, and more.
 
-[![npm package](https://img.shields.io/badge/npm%20i%20--g-vbt-blue)](https://www.npmjs.com/package/vbt) [![version number](https://img.shields.io/npm/v/vbt)](https://www.npmjs.com/package/vbt?activeTab=versions) [![Actions Status](https://github.com/toolsu/vbt/workflows/Test/badge.svg)](https://github.com/toolsu/vbt/actions) [![License](https://img.shields.io/badge/license-MIT-brightgreen)](https://github.com/toolsu/vbt/blob/main/LICENSE)<!-- vbt-version -->
+[![npm package](https://img.shields.io/badge/npm%20i%20--g-vbt-blue)](https://www.npmjs.com/package/vbt) [![version number](https://img.shields.io/npm/v/vbt)](https://www.npmjs.com/package/vbt?activeTab=versions) [![Actions Status](https://github.com/toolsu/vbt/workflows/Test/badge.svg)](https://github.com/toolsu/vbt/actions) [![License](https://img.shields.io/badge/license-MIT-brightgreen)](https://github.com/toolsu/vbt/blob/main/LICENSE)
 
 ## Install
 
@@ -36,7 +36,7 @@ vbt patch --config x.json # Use custom config file
 
 ## File Version Replacement
 
-Mark lines in any file with `vbt-version` (or a custom marker via the `marker` config option) to have their version updated automatically:
+The manifest file is updated automatically — you don't need to add it to `files` or mark it with a comment. For **additional** files, mark lines with `vbt-version` (or a custom marker via the `marker` config option) to have their version updated:
 
 JavaScript / TypeScript:
 ```js
@@ -74,7 +74,7 @@ The HTML comment is invisible in rendered markdown, and the version inside the c
 
 ```json
 {
-  "files": ["src/version.ts", "Cargo.toml", "README.md"]
+  "files": ["src/version.ts", "README.md"]
 }
 ```
 
@@ -84,10 +84,9 @@ Create `vbt.config.json` in your project root, or add a `"vbt"` key to `package.
 
 ```json
 {
-  "manifest": "Cargo.toml",
-  "files": ["src/version.rs", "README.md"],
   "push": true,
-  "preBumpCheck": "cargo test"
+  "files": ["README.md"],
+  "preBumpCheck": "npm run check && npm run test"
 }
 ```
 
@@ -102,10 +101,13 @@ All file paths (`manifest`, `files`, `commitFiles`, config file paths) are resol
 3. Calculate new version
 4. Update manifest file (`manifest`)
 5. Replace versions in marked files (`files` + `marker`)
-6. Git commit (`commitMessage`, `commitFiles`)
-7. Git tag (`tag`, `tagMessage`)
-8. Git push (`push`)
-9. Run post-bump hook (`postBumpHook`)
+6. Sync lockfile (auto, see below)
+7. Git commit (`commitMessage`, `commitFiles`)
+8. Git tag (`tag`, `tagMessage`)
+9. Git push (`push`)
+10. Run post-bump hook (`postBumpHook`)
+
+**Automatic lockfile sync:** When the manifest is `Cargo.toml` and a `Cargo.lock` file exists in the project root, vbt automatically runs `cargo generate-lockfile` to keep `Cargo.lock` in sync after the version bump. The updated `Cargo.lock` is included in the commit. Projects without `Cargo.lock` (e.g., libraries that don't track it) are not affected.
 
 Each step can be independently disabled. Note: disabling commit (`commitMessage: false`) automatically disables tag and push, since a tag without a commit would point to the wrong (pre-bump) commit.
 
@@ -117,7 +119,7 @@ The flow is not fully transactional: if a step fails before commit, vbt attempts
 |--------|------|---------|-------------|
 | `requireCleanWorkingDirectory` | `boolean` | `true` | Require clean git working directory |
 | `preBumpCheck` | `string \| false` | `false` | Command to run before bumping |
-| `manifest` | `string` | `"./package.json"` | Path to manifest file (see supported files above) |
+| `manifest` | `string` | `"./package.json"` | Path to manifest file (see [supported files](#supported-manifest-files)) |
 | `files` | `string[]` | `[]` | Files to scan for marker-based version replacement |
 | `marker` | `string` | `"vbt-version"` | Marker string to identify lines for replacement |
 | `commitMessage` | `string \| false` | `"chore: bump version to v{{version}}"` | Commit message template, or `false` to skip commit |
@@ -165,7 +167,10 @@ For non-Node.js projects, create a `vbt.config.json` with the `manifest` option:
 
 ```json
 {
-  "manifest": "Cargo.toml"
+  "manifest": "Cargo.toml",
+  "push": true,
+  "files": ["src/version.rs", "README.md"],
+  "preBumpCheck": "cargo test"
 }
 ```
 

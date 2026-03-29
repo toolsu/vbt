@@ -1285,6 +1285,93 @@ describe('run', () => {
     )
   })
 
+  describe('Cargo.lock sync', () => {
+    const cargoToml = '[package]\nname = "test"\nversion = "1.0.0"\n'
+
+    function setupCargoMocks(configOverrides: Partial<ResolvedConfig> = {}) {
+      mockFindProjectRoot.mockReturnValue('/fake/project')
+      mockLoadConfig.mockResolvedValue(makeConfig({ manifest: 'Cargo.toml', ...configOverrides }))
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockImplementation((p) => {
+        if (String(p).endsWith('Cargo.lock')) return 'old-lock-content'
+        return cargoToml
+      })
+      mockExecFileSync.mockImplementation(defaultExecFileSyncMock)
+      mockExecSync.mockReturnValue(Buffer.from(''))
+      mockGetManifestHandler.mockReturnValue({
+        readVersion: () => '1.0.0',
+        writeVersion: (c: string, _old: string, newVer: string) =>
+          c.replace('version = "1.0.0"', `version = "${newVer}"`),
+      })
+    }
+
+    it('syncs Cargo.lock when Cargo.toml and Cargo.lock both exist', async () => {
+      setupCargoMocks()
+      await run(['patch'])
+
+      // Should read original Cargo.lock for rollback
+      expect(mockReadFileSync).toHaveBeenCalledWith(expect.stringContaining('Cargo.lock'), 'utf8')
+      // Should run cargo generate-lockfile
+      expect(mockExecSync).toHaveBeenCalledWith('cargo generate-lockfile', expect.anything())
+      // Should log sync message
+      expect(vi.mocked(console.log)).toHaveBeenCalledWith('✓ Synced Cargo.lock')
+      // Should stage Cargo.lock
+      const calls = gitCalls()
+      expect(calls).toContainEqual(['add', 'Cargo.lock'])
+    })
+
+    it('does not sync Cargo.lock when Cargo.lock does not exist', async () => {
+      mockFindProjectRoot.mockReturnValue('/fake/project')
+      mockLoadConfig.mockResolvedValue(makeConfig({ manifest: 'Cargo.toml' }))
+      mockExistsSync.mockImplementation((p) => {
+        if (String(p).endsWith('Cargo.lock')) return false
+        return true
+      })
+      mockReadFileSync.mockReturnValue(cargoToml)
+      mockExecFileSync.mockImplementation(defaultExecFileSyncMock)
+      mockExecSync.mockReturnValue(Buffer.from(''))
+      mockGetManifestHandler.mockReturnValue({
+        readVersion: () => '1.0.0',
+        writeVersion: (c: string, _old: string, newVer: string) =>
+          c.replace('version = "1.0.0"', `version = "${newVer}"`),
+      })
+
+      await run(['patch'])
+
+      // Should NOT run cargo generate-lockfile
+      expect(mockExecSync).not.toHaveBeenCalledWith('cargo generate-lockfile', expect.anything())
+    })
+
+    it('skips Cargo.lock sync log in dry run', async () => {
+      setupCargoMocks({ dryRun: true })
+      await run(['patch'])
+
+      expect(vi.mocked(console.log)).not.toHaveBeenCalledWith('✓ Synced Cargo.lock')
+    })
+
+    it('rolls back Cargo.lock when git commit fails', async () => {
+      setupCargoMocks()
+      mockExecFileSync.mockImplementation((_file, args) => {
+        if (args && (args as string[])[0] === 'rev-parse')
+          throw new Error('fatal: not a valid object name')
+        if (args && (args as string[])[0] === 'commit') throw new Error('commit failed')
+        return Buffer.from('')
+      })
+
+      await expect(run(['patch'])).rejects.toThrow('commit failed')
+
+      // Should restore original Cargo.lock
+      expect(mockWriteFileSync).toHaveBeenCalledWith(
+        expect.stringContaining('Cargo.lock'),
+        'old-lock-content',
+        'utf8',
+      )
+      expect(vi.mocked(console.error)).toHaveBeenCalledWith(
+        'Rolled back file changes due to error.',
+      )
+    })
+  })
+
   it('recovery hints without tag when push fails and tag is disabled', async () => {
     setupMocks({ push: true, tag: false })
     mockExecFileSync.mockImplementation((_file, args) => {

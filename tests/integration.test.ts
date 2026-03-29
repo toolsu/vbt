@@ -273,6 +273,49 @@ describe('manifest types', () => {
     expect(getTags(tempDir)).toContain('v1.0.1')
   })
 
+  it('syncs Cargo.lock when it exists', () => {
+    writeFileSync(
+      join(tempDir, 'Cargo.toml'),
+      '[package]\nname = "my-crate"\nversion = "1.0.0"\nedition = "2021"\n',
+    )
+    // Create a valid Rust source file so cargo can parse the manifest
+    mkdirSync(join(tempDir, 'src'))
+    writeFileSync(join(tempDir, 'src', 'lib.rs'), '')
+    // Generate a real Cargo.lock
+    execSync('cargo generate-lockfile', { cwd: tempDir, stdio: 'pipe' })
+    writeFileSync(join(tempDir, 'vbt.config.json'), JSON.stringify({ manifest: 'Cargo.toml' }))
+    execSync('git add -A && git commit -m "init"', { cwd: tempDir, stdio: 'pipe' })
+
+    // Verify the lock has the old version
+    const lockBefore = readFileSync(join(tempDir, 'Cargo.lock'), 'utf8')
+    expect(lockBefore).toContain('version = "1.0.0"')
+
+    runVbt('patch', tempDir)
+
+    const toml = readFileSync(join(tempDir, 'Cargo.toml'), 'utf8')
+    expect(toml).toContain('version = "1.0.1"')
+
+    const lock = readFileSync(join(tempDir, 'Cargo.lock'), 'utf8')
+    expect(lock).toContain('version = "1.0.1"')
+
+    // Cargo.lock should be included in the commit (not left as unstaged)
+    const status = execSync('git status --porcelain', { cwd: tempDir, encoding: 'utf8' }).trim()
+    expect(status).toBe('')
+  })
+
+  it('does not create Cargo.lock when it does not exist', () => {
+    writeFileSync(
+      join(tempDir, 'Cargo.toml'),
+      '[package]\nname = "my-lib"\nversion = "1.0.0"\nedition = "2021"\n',
+    )
+    writeFileSync(join(tempDir, 'vbt.config.json'), JSON.stringify({ manifest: 'Cargo.toml' }))
+    execSync('git add -A && git commit -m "init"', { cwd: tempDir, stdio: 'pipe' })
+
+    runVbt('patch', tempDir)
+
+    expect(existsSync(join(tempDir, 'Cargo.lock'))).toBe(false)
+  })
+
   it('bumps pyproject.toml', () => {
     writeFileSync(
       join(tempDir, 'pyproject.toml'),
