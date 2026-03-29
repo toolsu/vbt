@@ -2,7 +2,7 @@
 
 Lightweight CLI to bump version, replace version strings in marked files, and create git commits and tags. Works with any project: Node.js, Rust, Python, PHP, Dart, Deno, and more.
 
-[![npm package](https://img.shields.io/badge/npm%20i%20--g-vbt-blue)](https://www.npmjs.com/package/vbt) [![version number](https://img.shields.io/npm/v/vbt)](https://www.npmjs.com/package/vbt?activeTab=versions) [![Actions Status](https://github.com/toolsu/vbt/workflows/Test/badge.svg)](https://github.com/toolsu/vbt/actions) [![License](https://img.shields.io/badge/license-MIT-brightgreen)](https://github.com/toolsu/vbt/blob/main/LICENSE)
+[![npm package](https://img.shields.io/badge/npm%20i%20--g-vbt-blue)](https://www.npmjs.com/package/vbt) [![version number](https://badgen.net/badge/version/1.3.0/yellow)](https://www.npmjs.com/package/vbt?activeTab=versions) [![Actions Status](https://github.com/toolsu/vbt/workflows/Test/badge.svg)](https://github.com/toolsu/vbt/actions) [![License](https://img.shields.io/badge/license-MIT-brightgreen)](https://github.com/toolsu/vbt/blob/main/LICENSE) <!-- vbt-version -->
 
 ## Install
 
