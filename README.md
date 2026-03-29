@@ -88,14 +88,14 @@ The HTML comment is invisible in rendered markdown, and the version inside the c
 
 For JSON files (where comments aren't supported), use object entries with `jsonPath` to specify a dot-notation path to the version value:
 
-```json
+```jsonc
 {
-  manifest: "./Cargo.toml",
-  files: [
-    "README.md",                                                // marker-based
-    { path: "package.json", jsonPath: "version" },              // top-level key
-    { path: "src-tauri/tauri.conf.json", jsonPath: "version" }, // top-level key
-    { path: "config.json", jsonPath: "metadata.app.version" }   // nested path
+  "manifest": "./Cargo.toml",
+  "files": [
+    "README.md",                                                    // marker-based
+    { "path": "package.json", "jsonPath": "version" },              // top-level key
+    { "path": "src-tauri/tauri.conf.json", "jsonPath": "version" }, // top-level key
+    { "path": "config.json", "jsonPath": "metadata.app.version" }   // nested path
   ]
 }
 ```
