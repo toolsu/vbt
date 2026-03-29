@@ -2,7 +2,7 @@
 
 Lightweight CLI to bump version, replace version strings in marked files, and create git commits and tags. Works with any project: Node.js, Rust, Python, PHP, Dart, Deno, and more.
 
-[![npm package](https://img.shields.io/badge/npm%20i%20--g-vbt-blue)](https://www.npmjs.com/package/vbt) [![version number](https://badgen.net/badge/version/1.4.1/yellow)](https://www.npmjs.com/package/vbt?activeTab=versions) [![Actions Status](https://github.com/toolsu/vbt/workflows/Test/badge.svg)](https://github.com/toolsu/vbt/actions) [![License](https://img.shields.io/badge/license-MIT-brightgreen)](https://github.com/toolsu/vbt/blob/main/LICENSE) <!-- vbt-version -->
+[![npm package](https://img.shields.io/badge/npm%20i%20--g-vbt-blue)](https://www.npmjs.com/package/vbt) [![version number](https://badgen.net/badge/version/1.4.2/yellow)](https://www.npmjs.com/package/vbt?activeTab=versions) [![Actions Status](https://github.com/toolsu/vbt/workflows/Test/badge.svg)](https://github.com/toolsu/vbt/actions) [![License](https://img.shields.io/badge/license-MIT-brightgreen)](https://github.com/toolsu/vbt/blob/main/LICENSE) <!-- vbt-version -->
 
 ## Install
 
@@ -46,19 +46,19 @@ For **additional** files, mark lines with `vbt-version` (or a custom marker via 
 
 JavaScript / TypeScript:
 ```js
-const VERSION = "1.4.1"; // vbt-version
+const VERSION = "1.4.2"; // vbt-version
 ```
 
 Markdown / HTML:
 
 ```markdown
-Current version: 1.4.1 <!-- vbt-version -->
+Current version: 1.4.2 <!-- vbt-version -->
 ```
 
 TOML:
 
 ```toml
-version = "1.4.1" # vbt-version
+version = "1.4.2" # vbt-version
 ```
 
 Only the **old version** (read from the manifest file) on marked lines is replaced. Unmarked lines and other version-like strings are never touched.
@@ -70,7 +70,7 @@ Use `+N` to replace the version N lines below the marker. This is useful for cod
 ````markdown
 <!-- vbt-version +2 -->
 ```bash
-npm i -g vbt@1.4.1
+npm i -g vbt@1.4.2
 ```
 ````
 
