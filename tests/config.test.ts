@@ -454,9 +454,9 @@ describe('validateConfig', () => {
     expect(() => validateConfig(config)).toThrow('"requireCleanWorkingDirectory" must be a boolean')
   })
 
-  it('throws when preBumpCheck is not string or false', () => {
-    const config = makeInvalidConfig({ preBumpCheck: 123 })
-    expect(() => validateConfig(config)).toThrow('"preBumpCheck" must be a string or false')
+  it('throws when preBump is not string or false', () => {
+    const config = makeInvalidConfig({ preBump: 123 })
+    expect(() => validateConfig(config)).toThrow('"preBump" must be a string or false')
   })
 
   it('throws when manifest is not string', () => {
@@ -525,9 +525,9 @@ describe('validateConfig', () => {
     expect(() => validateConfig(config)).toThrow('"postVerRepl" must be a string or false')
   })
 
-  it('throws when postBumpHook is not string or false', () => {
-    const config = makeInvalidConfig({ postBumpHook: {} })
-    expect(() => validateConfig(config)).toThrow('"postBumpHook" must be a string or false')
+  it('throws when postBump is not string or false', () => {
+    const config = makeInvalidConfig({ postBump: {} })
+    expect(() => validateConfig(config)).toThrow('"postBump" must be a string or false')
   })
 
   it('throws when verbose is not boolean', () => {

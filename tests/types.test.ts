@@ -28,7 +28,7 @@ describe('DEFAULT_CONFIG', () => {
 
   it('has correct default values', () => {
     expect(DEFAULT_CONFIG.requireCleanWorkingDirectory).toBe(true)
-    expect(DEFAULT_CONFIG.preBumpCheck).toBe(false)
+    expect(DEFAULT_CONFIG.preBump).toBe(false)
     expect(DEFAULT_CONFIG.manifest).toBe('./package.json')
     expect(DEFAULT_CONFIG.files).toEqual([])
     expect(DEFAULT_CONFIG.marker).toBe('vbt-version')
@@ -37,7 +37,7 @@ describe('DEFAULT_CONFIG', () => {
     expect(DEFAULT_CONFIG.tag).toBe('v{{version}}')
     expect(DEFAULT_CONFIG.tagMessage).toBe('chore: release v{{version}}')
     expect(DEFAULT_CONFIG.push).toBe(false)
-    expect(DEFAULT_CONFIG.postBumpHook).toBe(false)
+    expect(DEFAULT_CONFIG.postBump).toBe(false)
     expect(DEFAULT_CONFIG.verbose).toBe(false)
     expect(DEFAULT_CONFIG.dryRun).toBe(false)
   })

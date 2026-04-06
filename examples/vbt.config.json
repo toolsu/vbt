@@ -1,6 +1,6 @@
 {
   "requireCleanWorkingDirectory": true,
-  "preBumpCheck": false,
+  "preBump": false,
   "manifest": "./package.json",
   "files": [],
   "marker": "vbt-version",
@@ -9,7 +9,7 @@
   "tag": "v{{version}}",
   "tagMessage": "chore: release v{{version}}",
   "push": false,
-  "postBumpHook": false,
+  "postBump": false,
   "verbose": false,
   "dryRun": false
 }

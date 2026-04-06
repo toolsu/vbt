@@ -41,7 +41,7 @@ export interface Config {
    * Command to run before bumping (e.g., "npm test"). false to skip.
    * @default false
    */
-  preBumpCheck?: string | false
+  preBump?: string | false
 
   /**
    * Path to manifest file to update (relative to project root).
@@ -113,7 +113,7 @@ export interface Config {
    * Command to run after bumping (e.g., "npm publish"). false to skip.
    * @default false
    */
-  postBumpHook?: string | false
+  postBump?: string | false
 
   /**
    * Whether to show verbose output
@@ -133,7 +133,7 @@ export interface Config {
  */
 export const DEFAULT_CONFIG: Required<Omit<Config, 'packageJson'>> = {
   requireCleanWorkingDirectory: true,
-  preBumpCheck: false,
+  preBump: false,
   manifest: './package.json',
   files: [],
   marker: 'vbt-version',
@@ -143,7 +143,7 @@ export const DEFAULT_CONFIG: Required<Omit<Config, 'packageJson'>> = {
   tagMessage: 'chore: release v{{version}}',
   push: false,
   postVerRepl: false,
-  postBumpHook: false,
+  postBump: false,
   verbose: false,
   dryRun: false,
 }

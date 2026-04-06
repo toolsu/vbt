@@ -110,7 +110,7 @@ Create `vbt.config.json` in your project root, or add a `"vbt"` key to `package.
 {
   "push": true,
   "files": ["README.md"],
-  "preBumpCheck": "npm run check && npm run test"
+  "preBump": "npm run check && npm run test"
 }
 ```
 
@@ -121,7 +121,7 @@ All file paths (`manifest`, `files`, `commitFiles`, config file paths) are resol
 ### Execution order
 
 1. Check clean working directory (`requireCleanWorkingDirectory`)
-2. Run pre-bump check hook (`preBumpCheck`)
+2. Run pre-bump check hook (`preBump`)
 3. Calculate new version
 4. Update manifest file (`manifest`)
 5. Replace versions in marked files (`files` + `marker`)
@@ -130,20 +130,20 @@ All file paths (`manifest`, `files`, `commitFiles`, config file paths) are resol
 8. Git commit (`commitMessage`, `commitFiles`)
 9. Git tag (`tag`, `tagMessage`)
 10. Git push (`push`)
-11. Run post-bump hook (`postBumpHook`)
+11. Run post-bump hook (`postBump`)
 
 **Automatic lockfile sync:** When the manifest is `Cargo.toml` and a `Cargo.lock` file exists in the project root, vbt automatically runs `cargo generate-lockfile` to keep `Cargo.lock` in sync after the version bump. The updated `Cargo.lock` is included in the commit. Projects without `Cargo.lock` (e.g., libraries that don't track it) are not affected.
 
 Each step can be independently disabled. Note: disabling commit (`commitMessage: false`) automatically disables tag and push, since a tag without a commit would point to the wrong (pre-bump) commit.
 
-The flow is not fully transactional: if a step fails before commit, vbt attempts to roll back file changes; if `push` or `postBumpHook` fails later, the local commit/tag may already exist. Use `--dry-run` to preview first, and check `git status` / `git diff` to recover.
+The flow is not fully transactional: if a step fails before commit, vbt attempts to roll back file changes; if `push` or `postBump` fails later, the local commit/tag may already exist. Use `--dry-run` to preview first, and check `git status` / `git diff` to recover.
 
 ### Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `requireCleanWorkingDirectory` | `boolean` | `true` | Require clean git working directory |
-| `preBumpCheck` | `string \| false` | `false` | (Hook) Command to run before bumping |
+| `preBump` | `string \| false` | `false` | (Hook) Command to run before bumping |
 | `manifest` | `string` | `"./package.json"` | Path to manifest file (see [supported files](#supported-manifest-files)) |
 | `files` | `(string \| {path, jsonPath})[]` | `[]` | Files for version replacement (strings: marker-based, objects: JSON path) |
 | `marker` | `string` | `"vbt-version"` | Marker string to identify lines for replacement |
@@ -153,7 +153,7 @@ The flow is not fully transactional: if a step fails before commit, vbt attempts
 | `tagMessage` | `string \| false` | `"chore: release v{{version}}"` | Annotated tag message, or `false` for lightweight tag |
 | `push` | `boolean` | `false` | Push commits and tags to origin |
 | `postVerRepl` | `string \| false` | `false` | (Hook) Command to run after version replacement, before commit |
-| `postBumpHook` | `string \| false` | `false` | (Hook) Command to run after bumping |
+| `postBump` | `string \| false` | `false` | (Hook) Command to run after bumping |
 | `verbose` | `boolean` | `false` | Show verbose output |
 | `dryRun` | `boolean` | `false` | Dry run without making changes |
 
@@ -196,7 +196,7 @@ For non-Node.js projects, create a `vbt.config.json` with the `manifest` option:
   "manifest": "Cargo.toml",
   "push": true,
   "files": ["src/version.rs", "README.md"],
-  "preBumpCheck": "cargo test"
+  "preBump": "cargo test"
 }
 ```
 

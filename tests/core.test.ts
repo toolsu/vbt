@@ -896,14 +896,14 @@ describe('run', () => {
   })
 
   it('runs pre-bump check', async () => {
-    setupMocks({ preBumpCheck: 'npm test' })
+    setupMocks({ preBump: 'npm test' })
     await run(['patch'])
 
     expect(mockExecSync).toHaveBeenCalledWith('npm test', expect.anything())
   })
 
   it('does not run pre-bump check when false', async () => {
-    setupMocks({ preBumpCheck: false })
+    setupMocks({ preBump: false })
     await run(['patch'])
 
     expect(mockExecSync).not.toHaveBeenCalled()
@@ -1008,14 +1008,14 @@ describe('run', () => {
   })
 
   it('runs post-bump hook', async () => {
-    setupMocks({ postBumpHook: 'npm publish' })
+    setupMocks({ postBump: 'npm publish' })
     await run(['patch'])
 
     expect(mockExecSync).toHaveBeenCalledWith('npm publish', expect.anything())
   })
 
   it('does not run post-bump hook when false', async () => {
-    setupMocks({ postBumpHook: false })
+    setupMocks({ postBump: false })
     await run(['patch'])
 
     expect(mockExecSync).not.toHaveBeenCalled()
@@ -1282,7 +1282,7 @@ describe('run', () => {
   })
 
   it('dry run with post-bump hook does not log hook success', async () => {
-    setupMocks({ postBumpHook: 'npm publish', dryRun: true })
+    setupMocks({ postBump: 'npm publish', dryRun: true })
     await run(['patch'])
 
     const logCalls = vi.mocked(console.log).mock.calls.map((c) => String(c[0]))
@@ -1367,7 +1367,7 @@ describe('run', () => {
   })
 
   it('passes projectRoot as cwd to shell hooks', async () => {
-    setupMocks({ preBumpCheck: 'npm test' })
+    setupMocks({ preBump: 'npm test' })
     await run(['patch'])
 
     expect(mockExecSync).toHaveBeenCalledWith(

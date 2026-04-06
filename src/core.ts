@@ -416,9 +416,9 @@ export async function run(args: string[]): Promise<void> {
   }
 
   // Run pre-bump check
-  if (config.preBumpCheck) {
+  if (config.preBump) {
     console.log('Running pre-bump checks...')
-    execShell(config.preBumpCheck, 'Pre-bump check', dryRun, verbose, projectRoot)
+    execShell(config.preBump, 'Pre-bump check', dryRun, verbose, projectRoot)
     console.log('Pre-bump checks passed.')
   }
 
@@ -622,8 +622,8 @@ export async function run(args: string[]): Promise<void> {
       }
     }
 
-    if (config.postBumpHook) {
-      execShell(config.postBumpHook, 'Post-bump hook', dryRun, verbose, projectRoot)
+    if (config.postBump) {
+      execShell(config.postBump, 'Post-bump hook', dryRun, verbose, projectRoot)
 
       if (!dryRun) {
         console.log('✓ Ran post-bump hook')

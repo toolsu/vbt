@@ -236,7 +236,7 @@ export function validateConfig(config: ResolvedConfig): void {
 
   // Type checks
   validateFieldType('requireCleanWorkingDirectory', config.requireCleanWorkingDirectory, 'boolean')
-  validateFieldType('preBumpCheck', config.preBumpCheck, 'string|false')
+  validateFieldType('preBump', config.preBump, 'string|false')
   validateFieldType('manifest', config.manifest, 'string')
   validateFieldType('files', config.files, 'FileEntry[]')
   validateFieldType('marker', config.marker, 'string')
@@ -246,7 +246,7 @@ export function validateConfig(config: ResolvedConfig): void {
   validateFieldType('tagMessage', config.tagMessage, 'string|false')
   validateFieldType('push', config.push, 'boolean')
   validateFieldType('postVerRepl', config.postVerRepl, 'string|false')
-  validateFieldType('postBumpHook', config.postBumpHook, 'string|false')
+  validateFieldType('postBump', config.postBump, 'string|false')
   validateFieldType('verbose', config.verbose, 'boolean')
   validateFieldType('dryRun', config.dryRun, 'boolean')
 

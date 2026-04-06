@@ -63,9 +63,9 @@ Use [vbt.config.full.json](vbt.config.full.json):
 
 ```json
 {
-  "preBumpCheck": "npm run lint && npm test && npm run build",
+  "preBump": "npm run lint && npm test && npm run build",
   "push": true,
-  "postBumpHook": "npm publish"
+  "postBump": "npm publish"
 }
 ```
 
